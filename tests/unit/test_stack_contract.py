@@ -72,6 +72,7 @@ class StackContractTests(unittest.TestCase):
         values = self.load("charts/monitoring/values.yaml")
         ruler = values["mimir-distributed"]["ruler"]
         config = values["mimir-distributed"]["mimir"]["structuredConfig"]
+        self.assertFalse(config["ingest_storage"]["enabled"])
         self.assertEqual("/data/ruler", config["ruler"]["rule_path"])
         self.assertEqual("local", config["ruler_storage"]["backend"])
         self.assertEqual("/data/rules", config["ruler_storage"]["local"]["directory"])

@@ -108,10 +108,10 @@ for port in 18080 18081; do
   RULES=""
   for _ in $(seq 1 120); do
     RULES=$(curl -fsS "http://127.0.0.1:${port}/prometheus/api/v1/rules" 2>/dev/null || true)
-    if jq -e --arg group "$group" '.data.groups[] | select(.name == $group) and (.rules | length > 0) and (.rules[0].lastEvaluation | length > 0)' >/dev/null 2>&1 <<<"$RULES"; then break; fi
+    if jq -e --arg group "$group" '.data.groups[] | select(.name == $group) and (.rules | length > 0) and (.lastEvaluation | length > 0)' >/dev/null 2>&1 <<<"$RULES"; then break; fi
     sleep 2
   done
-  jq -e --arg group "$group" '.data.groups[] | select(.name == $group) and (.rules | length > 0) and (.rules[0].lastEvaluation | length > 0)' <<<"$RULES" >/dev/null
+  jq -e --arg group "$group" '.data.groups[] | select(.name == $group) and (.rules | length > 0) and (.lastEvaluation | length > 0)' <<<"$RULES" >/dev/null
   curl -fsS --get --data-urlencode 'query=up' "http://127.0.0.1:${port}/prometheus/api/v1/query" | jq -e '.status == "success" and (.data.result | length > 0)' >/dev/null
 done
 for port in 18082 18083; do

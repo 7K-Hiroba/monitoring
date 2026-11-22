@@ -74,6 +74,8 @@ mimir-distributed:
         readOnly: true
   mimir:
     structuredConfig:
+      ingest_storage:
+        enabled: false
       ruler:
         rule_path: /data/ruler
       ruler_storage:
