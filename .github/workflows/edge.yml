@@ -4,6 +4,6 @@ permissions: {contents: read}
 concurrency: {group: "hiroba-release-${{ github.repository }}", cancel-in-progress: false}
 jobs:
   edge:
-    uses: 7K-Hiroba/workflows/.github/workflows/edge.yml@a2facca81055096a0a12893e0fc11cb082c38183 # v1.1.0
+    uses: 7K-Hiroba/workflows/.github/workflows/edge.yml@df9f8cbfc617bf8e8d14e780c6f719cbc110bf58 # v1.1.0
     with: {root: .}
     permissions: {contents: write, packages: write, id-token: write, attestations: write, actions: read, artifact-metadata: write}

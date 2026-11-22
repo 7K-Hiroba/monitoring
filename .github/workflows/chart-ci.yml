@@ -3,5 +3,5 @@ on: {pull_request: {branches: [main]}}
 permissions: {contents: read}
 jobs:
   chart:
-    uses: 7K-Hiroba/workflows/.github/workflows/ci-chart.yml@a2facca81055096a0a12893e0fc11cb082c38183 # v1.1.0
+    uses: 7K-Hiroba/workflows/.github/workflows/ci-chart.yml@df9f8cbfc617bf8e8d14e780c6f719cbc110bf58 # v1.1.0
     with: {root: .}
