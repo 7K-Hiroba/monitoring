@@ -11,9 +11,10 @@ spec:
   ttlStrategy:
     secondsAfterCompletion: 3600
     secondsAfterFailure: 3600
-  inputs:
+  arguments:
     parameters:
       - name: context
+        default: ""
         description: Platform-rendered inari.observability.params.v1 context; endpoints and all identities are server/target-bound.
   templates:
     - name: verify

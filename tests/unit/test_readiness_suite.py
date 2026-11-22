@@ -52,6 +52,11 @@ class ReadinessSuiteTests(unittest.TestCase):
     def test_workflow_has_no_install_mutation_or_secret_escape(self):
         template = self.workflow["spec"]["templates"][0]
         self.assertEqual("verify", self.workflow["spec"]["entrypoint"])
+        self.assertNotIn("inputs", self.workflow["spec"])
+        parameter = self.workflow["spec"]["arguments"]["parameters"][0]
+        self.assertEqual("context", parameter["name"])
+        self.assertEqual("", parameter["default"])
+        self.assertEqual("context", template["inputs"]["parameters"][0]["name"])
         self.assertNotIn("resource", template)
         self.assertNotIn("suspend", template)
         container = template["container"]

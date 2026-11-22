@@ -77,6 +77,7 @@ class StackContractTests(unittest.TestCase):
         config = values["mimir-distributed"]["mimir"]["structuredConfig"]
         self.assertFalse(config["ingest_storage"]["enabled"])
         self.assertTrue(config["ingester"]["push_grpc_method_enabled"])
+        self.assertEqual(1, config["ingester"]["ring"]["replication_factor"])
         self.assertEqual("/data/ruler", config["ruler"]["rule_path"])
         self.assertEqual("local", config["ruler_storage"]["backend"])
         self.assertEqual("/data/rules", config["ruler_storage"]["local"]["directory"])

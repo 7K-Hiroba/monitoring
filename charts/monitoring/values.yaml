@@ -80,6 +80,10 @@ mimir-distributed:
         # Classic ingestion is selected above, so retain the distributor's
         # gRPC write path instead of the chart's Kafka-only default.
         push_grpc_method_enabled: true
+        ring:
+          # The chart deliberately runs one ingester; do not require a second
+          # live replica for every write in this single-node configuration.
+          replication_factor: 1
       ruler:
         rule_path: /data/ruler
       ruler_storage:
