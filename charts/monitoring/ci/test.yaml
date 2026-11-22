@@ -1,0 +1,7 @@
+schema: inari.chart-test.v1
+dependencies:
+  - packages/observability-pack/tests/deps/prometheusrule-crd.yaml
+install:
+  timeout: 5m
+  values:
+    - charts/monitoring/ci/kind-values.yaml

@@ -1,0 +1,21 @@
+apiVersion: inari.dev/v1alpha1
+kind: UIHints
+package: monitoring-stack
+groups:
+  - name: Stack
+    fields: [name, namespace, topology, chartVersion, chartDigest]
+  - name: GitOps
+    fields: [project, argocdNamespace]
+  - name: Client telemetry
+    fields: [remoteWriteUrl, lokiPushUrl, controlPlaneTargets]
+fields:
+  name: {widget: text, help: ArgoCD Application and Helm release name.}
+  namespace: {widget: namespacePicker, help: Namespace for the observability stack.}
+  topology: {widget: select, help: central, local, or client. Mimir replaces Prometheus in every topology.}
+  chartVersion: {widget: text, help: Exact monitoring chart SemVer.}
+  chartDigest: {widget: text, help: Exact sha256 OCI digest of the signed monitoring chart.}
+  project: {widget: text, help: Existing policy-approved ArgoCD project.}
+  argocdNamespace: {widget: namespacePicker, help: Namespace containing ArgoCD Applications.}
+  remoteWriteUrl: {widget: text, help: Required for client clusters without local Mimir.}
+  lokiPushUrl: {widget: text, help: Required for client clusters without local Loki.}
+  controlPlaneTargets: {widget: text, help: Optional comma-separated control-plane metrics addresses for the reviewed environment.}

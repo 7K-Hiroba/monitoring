@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["topology", "components", "global", "observability"],
+  "properties": {
+    "topology": {"enum": ["central", "local", "client"]},
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mimir", "alertmanager", "grafana", "loki", "alloy", "kubeStateMetrics", "nodeExporter"],
+      "properties": {
+        "mimir": {"type": "boolean"},
+        "alertmanager": {"type": "boolean"},
+        "grafana": {"type": "boolean"},
+        "loki": {"type": "boolean"},
+        "alloy": {"type": "boolean"},
+        "kubeStateMetrics": {"type": "boolean"},
+        "nodeExporter": {"type": "boolean"}
+      }
+    },
+    "global": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["topology", "collectors"],
+      "properties": {
+        "topology": {"enum": ["central", "local", "client"]},
+        "telemetry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "remoteWriteUrl": {"type": "string"},
+            "lokiPushUrl": {"type": "string"}
+          }
+        },
+        "collectors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kubelet", "controlPlane"],
+          "properties": {
+            "kubelet": {
+              "type": "object",
+              "required": ["enabled"],
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "insecureSkipVerify": {"type": "boolean"},
+                "caFile": {"type": "string"}
+              }
+            },
+            "controlPlane": {
+              "type": "object",
+              "required": ["enabled", "targets"],
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "insecureSkipVerify": {"type": "boolean"},
+                "targets": {"type": "array", "items": {"type": "string"}}
+              }
+            }
+          }
+        }
+      }
+    },
+    "mimir-distributed": {"type": "object"},
+    "loki": {"type": "object"},
+    "grafana": {"type": "object"},
+    "alloy": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "object",
+          "properties": {
+            "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+          }
+        }
+      }
+    },
+    "kube-state-metrics": {"type": "object"},
+    "prometheus-node-exporter": {"type": "object"},
+    "observability": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "rules": {"type": "object", "properties": {"enabled": {"type": "boolean"}}}
+      }
+    },
+    "resources": {"type": "object"}
+  }
+}

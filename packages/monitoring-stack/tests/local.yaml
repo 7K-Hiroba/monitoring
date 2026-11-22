@@ -1,0 +1,11 @@
+apiVersion: observability.inari.io/v1alpha1
+kind: MonitoringStack
+metadata:
+  name: local
+  namespace: default
+spec:
+  name: monitoring-local
+  topology: local
+  chartVersion: 0.1.0
+  chartDigest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  ephemeralObjectStorage: true

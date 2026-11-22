@@ -1,0 +1,264 @@
+topology: central
+
+components:
+  mimir: true
+  alertmanager: true
+  grafana: true
+  loki: true
+  alloy: true
+  kubeStateMetrics: true
+  nodeExporter: true
+
+global:
+  topology: central
+  telemetry:
+    remoteWriteUrl: ""
+    lokiPushUrl: ""
+  collectors:
+    kubelet:
+      enabled: true
+      insecureSkipVerify: false
+      caFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    controlPlane:
+      enabled: true
+      insecureSkipVerify: false
+      targets: []
+
+mimir-distributed:
+  kafka:
+    enabled: false
+  minio:
+    enabled: false
+    rootUser: ci-only
+    rootPassword: ci-only-not-a-production-secret
+  ingester:
+    replicas: 1
+    zoneAwareReplication:
+      enabled: false
+  distributor:
+    replicas: 1
+  querier:
+    replicas: 1
+  query_frontend:
+    replicas: 1
+  query_scheduler:
+    replicas: 1
+  store_gateway:
+    replicas: 1
+    zoneAwareReplication:
+      enabled: false
+  compactor:
+    replicas: 1
+  ruler:
+    replicas: 1
+    extraVolumes:
+      - name: central-rules
+        configMap:
+          name: monitoring-central-rules
+          optional: true
+      - name: local-rules
+        configMap:
+          name: monitoring-local-rules
+          optional: true
+    extraVolumeMounts:
+      - name: central-rules
+        mountPath: /data/central
+        readOnly: true
+      - name: local-rules
+        mountPath: /data/local
+        readOnly: true
+  mimir:
+    structuredConfig:
+      ruler:
+        rule_path: /data/{{ .Values.global.topology }}
+  alertmanager:
+    enabled: true
+    replicas: 1
+    zoneAwareReplication:
+      enabled: false
+  overrides_exporter:
+    replicas: 1
+  metaMonitoring:
+    serviceMonitor:
+      enabled: false
+
+loki:
+  deploymentMode: Monolithic
+  loki:
+    schemaConfig:
+      configs:
+        - from: "2026-01-01"
+          store: tsdb
+          object_store: s3
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+    storage:
+      type: s3
+      bucketNames:
+        chunks: loki-chunks
+        ruler: loki-ruler
+  singleBinary:
+    replicas: 1
+    persistence:
+      enabled: true
+      size: 5Gi
+  read:
+    replicas: 0
+  write:
+    replicas: 0
+  backend:
+    replicas: 0
+  ingester:
+    replicas: 0
+  distributor:
+    replicas: 0
+  querier:
+    replicas: 0
+  queryFrontend:
+    replicas: 0
+  queryScheduler:
+    replicas: 0
+  indexGateway:
+    replicas: 0
+  compactor:
+    replicas: 0
+  ruler:
+    replicas: 0
+  lokiCanary:
+    enabled: false
+  test:
+    enabled: false
+
+grafana:
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 5Gi
+  testFramework:
+    enabled: false
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      folderAnnotation: inari.dev/folder
+      provider:
+        foldersFromFilesStructure: true
+        allowUiUpdates: false
+    datasources:
+      enabled: true
+      label: grafana_datasource
+
+alloy:
+  image:
+    digest: sha256:6616111d70b3c75d5aa177e0584a523403eaba0eb3b177cb387302c2206d5221
+  controller:
+    type: daemonset
+  alloy:
+    configMap:
+      content: |-
+        prometheus.scrape "kube_state_metrics" {
+          targets = [{"__address__" = "{{ .Release.Name }}-kube-state-metrics.{{ .Release.Namespace }}.svc:8080", "job" = "kube-state-metrics"}]
+          forward_to = [prometheus.relabel.central.receiver]
+        }
+
+        prometheus.scrape "node_exporter" {
+          targets = [{"__address__" = "{{ .Release.Name }}-prometheus-node-exporter.{{ .Release.Namespace }}.svc:9100", "job" = "node-exporter"}]
+          forward_to = [prometheus.relabel.central.receiver]
+        }
+
+        discovery.kubernetes "nodes" {
+          role = "node"
+        }
+
+        prometheus.scrape "kubelet" {
+          targets = discovery.kubernetes.nodes.targets
+          scheme = "https"
+          tls_config {
+            ca_file = "{{ .Values.global.collectors.kubelet.caFile }}"
+            insecure_skip_verify = {{ .Values.global.collectors.kubelet.insecureSkipVerify }}
+          }
+          authorization {
+            credentials_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          }
+          forward_to = [prometheus.relabel.central.receiver]
+        }
+
+        {{- if .Values.global.collectors.controlPlane.enabled }}
+        prometheus.scrape "control_plane" {
+          targets = [
+            {{- range .Values.global.collectors.controlPlane.targets }}
+            {"__address__" = "{{ . }}", "job" = "control-plane"},
+            {{- end }}
+          ]
+          scheme = "https"
+          tls_config {
+            insecure_skip_verify = {{ .Values.global.collectors.controlPlane.insecureSkipVerify }}
+          }
+          authorization {
+            credentials_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          }
+          forward_to = [prometheus.relabel.central.receiver]
+        }
+        {{- end }}
+
+        prometheus.relabel "central" {
+          rule {
+            target_label = "cluster"
+            replacement = "{{ .Release.Name }}"
+          }
+          forward_to = [prometheus.remote_write.mimir.receiver]
+        }
+
+        prometheus.remote_write "mimir" {
+          endpoint {
+            url = "{{ $url := .Values.global.telemetry.remoteWriteUrl }}{{ if not $url }}{{ $url = printf "http://%s-mimir-gateway.%s.svc:80/api/v1/push" .Release.Name .Release.Namespace }}{{ end }}{{ if and (eq .Values.global.topology "client") (not .Values.global.telemetry.remoteWriteUrl) }}{{ fail "telemetry.remoteWriteUrl is required when the client topology has no local Mimir" }}{{ end }}{{ $url }}"
+          }
+        }
+
+        loki.source.kubernetes "pods" {
+          forward_to = [loki.write.central.receiver]
+        }
+
+        loki.write "central" {
+          endpoint {
+            url = "{{ $url := .Values.global.telemetry.lokiPushUrl }}{{ if not $url }}{{ $url = printf "http://%s-loki-gateway.%s.svc:80/loki/api/v1/push" .Release.Name .Release.Namespace }}{{ end }}{{ if and (eq .Values.global.topology "client") (not .Values.global.telemetry.lokiPushUrl) }}{{ fail "telemetry.lokiPushUrl is required when the client topology has no local Loki" }}{{ end }}{{ $url }}"
+          }
+        }
+
+kube-state-metrics:
+  service:
+    enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+prometheus-node-exporter:
+  service:
+    enabled: true
+    port: 9100
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+observability:
+  enabled: false
+  rules:
+    enabled: false
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

@@ -1,0 +1,33 @@
+{{- if and .Values.components.grafana (or .Values.components.mimir .Values.components.loki) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-datasources
+  namespace: {{ .Release.Namespace }}
+  labels:
+    grafana_datasource: "1"
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    prune: false
+    datasources:
+      {{- if .Values.components.mimir }}
+      - name: Mimir
+        uid: mimir
+        type: prometheus
+        access: proxy
+        isDefault: true
+        editable: false
+        url: http://{{ .Release.Name }}-mimir-gateway.{{ .Release.Namespace }}.svc:80
+        jsonData:
+          prometheusType: Mimir
+      {{- end }}
+      {{- if .Values.components.loki }}
+      - name: Loki
+        uid: loki
+        type: loki
+        access: proxy
+        editable: false
+        url: http://{{ .Release.Name }}-loki-gateway.{{ .Release.Namespace }}.svc:80
+      {{- end }}
+{{- end }}

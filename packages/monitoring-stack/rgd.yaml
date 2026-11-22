@@ -1,0 +1,88 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: monitoring-stack
+  annotations:
+    inari.dev/stack-contract: inari.monitoring-stack/v1
+spec:
+  schema:
+    group: observability.inari.io
+    apiVersion: v1alpha1
+    kind: MonitoringStack
+    spec:
+      name: string | default="monitoring"
+      namespace: string | default="monitoring"
+      argocdNamespace: string | default="argocd"
+      project: string | default="default"
+      topology: string | default="central"
+      chartVersion: string | required=true
+      chartDigest: string | required=true
+      remoteWriteUrl: string | default=""
+      lokiPushUrl: string | default=""
+      controlPlaneTargets: string | default=""
+      ephemeralObjectStorage: boolean | default=false
+    status:
+      ready: ${has(application.status.health.status) && application.status.health.status == "Healthy" && has(application.status.sync.status) && application.status.sync.status == "Synced"}
+      chartVersion: ${schema.spec.chartVersion}
+      chartDigest: ${schema.spec.chartDigest}
+      topology: ${schema.spec.topology}
+  resources:
+    - id: application
+      template:
+        apiVersion: argoproj.io/v1alpha1
+        kind: Application
+        metadata:
+          name: ${schema.spec.name}
+          namespace: ${schema.spec.argocdNamespace}
+          labels:
+            app.kubernetes.io/name: monitoring
+            inari.dev/topology: ${schema.spec.topology}
+          annotations:
+            inari.dev/chart-version: ${schema.spec.chartVersion}
+            inari.dev/chart-digest: ${schema.spec.chartDigest}
+        spec:
+          project: ${schema.spec.project}
+          destination:
+            server: https://kubernetes.default.svc
+            namespace: ${schema.spec.namespace}
+          source:
+            repoURL: ghcr.io/7k-hiroba/monitoring/charts
+            chart: monitoring
+            targetRevision: ${schema.spec.chartDigest}
+            helm:
+              releaseName: ${schema.spec.name}
+              valueFiles: []
+              valuesObject:
+                topology: ${schema.spec.topology}
+                components:
+                  mimir: ${schema.spec.topology != "client"}
+                  alertmanager: ${schema.spec.topology != "client"}
+                  grafana: ${schema.spec.topology != "client"}
+                  loki: ${schema.spec.topology != "client"}
+                  alloy: true
+                  kubeStateMetrics: true
+                  nodeExporter: true
+                global:
+                  topology: ${schema.spec.topology}
+                  telemetry:
+                    remoteWriteUrl: ${schema.spec.remoteWriteUrl}
+                    lokiPushUrl: ${schema.spec.lokiPushUrl}
+                  collectors:
+                    kubelet:
+                      enabled: true
+                    controlPlane:
+                      enabled: true
+                      targets: '${schema.spec.controlPlaneTargets == "" ? [] : schema.spec.controlPlaneTargets.split(",")}'
+                mimir-distributed:
+                  minio:
+                    enabled: ${schema.spec.ephemeralObjectStorage}
+                loki:
+                  singleBinary:
+                    persistence:
+                      enabled: false
+          syncPolicy:
+            automated: {}
+            syncOptions:
+              - CreateNamespace=true
+              - ServerSideApply=true
+          revisionHistoryLimit: 3

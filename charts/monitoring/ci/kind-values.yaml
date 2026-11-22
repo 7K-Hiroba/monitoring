@@ -1,0 +1,49 @@
+topology: central
+components:
+  mimir: true
+  alertmanager: true
+  grafana: true
+  loki: true
+  alloy: true
+  kubeStateMetrics: true
+  nodeExporter: true
+global:
+  topology: central
+  collectors:
+    kubelet:
+      enabled: true
+      insecureSkipVerify: true
+    controlPlane:
+      enabled: true
+      insecureSkipVerify: true
+      targets: []
+mimir-distributed:
+  minio:
+    enabled: true
+loki:
+  loki:
+    schemaConfig:
+      configs:
+        - from: "2026-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+    storage:
+      type: filesystem
+  singleBinary:
+    persistence:
+      enabled: false
+grafana:
+  persistence:
+    enabled: false
+  grafana.ini:
+    auth.anonymous:
+      enabled: true
+      org_role: Admin
+observability:
+  enabled: true
+  rules:
+    enabled: true
