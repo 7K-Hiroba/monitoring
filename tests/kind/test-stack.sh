@@ -6,6 +6,8 @@ CLUSTER=monitoring-kind-$$
 ARGOCD_COMMIT=03c4ad854c1e6d922a121cd40f505d9bc6e402da
 KIND_IMAGE='kindest/node:v1.31.2@sha256:0526eb5cd8d892ed79b56feb48d17eeee1f719f55d5c35cef468f053caffad32'
 REGISTRY_IMAGE='registry@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373'
+REDIS_IMAGE='redis@sha256:ddd16a9b1575a774c7e62956be8daa1de5b32cfb5c25b7a216aefed8e0919f9b'
+ARGOCD_REDIS_IMAGE='public.ecr.aws/docker/library/redis:7.2.7-alpine'
 REGISTRY_HOST=monitoring-registry.monitoring-registry.svc:5000
 PF_PIDS=()
 WORK=$(mktemp -d)
@@ -42,6 +44,12 @@ wait_for_application() {
 }
 
 kind create cluster --name "$CLUSTER" --image "$KIND_IMAGE" --wait 120s
+
+# Preload the exact ArgoCD Redis image under its upstream name. This keeps the
+# pinned core-install manifest unchanged while avoiding public-ECR rate limits.
+docker pull "$REDIS_IMAGE"
+docker tag "$REDIS_IMAGE" "$ARGOCD_REDIS_IMAGE"
+kind load docker-image "$ARGOCD_REDIS_IMAGE" --name "$CLUSTER"
 
 # A disposable in-cluster OCI registry lets ArgoCD resolve the real digest source
 # without publishing or releasing task content.

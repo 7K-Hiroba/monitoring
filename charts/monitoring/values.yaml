@@ -104,6 +104,10 @@ mimir-distributed:
 loki:
   deploymentMode: SingleBinary
   loki:
+    commonConfig:
+      # SingleBinary runs one ingester, so its common ring must not require
+      # the chart's distributed default of three replicas.
+      replication_factor: 1
     schemaConfig:
       configs:
         - from: "2026-01-01"

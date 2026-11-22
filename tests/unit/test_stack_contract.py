@@ -112,6 +112,12 @@ class StackContractTests(unittest.TestCase):
         template = (ROOT / "charts/monitoring/templates/datasources.yaml").read_text()
         self.assertIn("mimir-gateway.{{ .Release.Namespace }}.svc:80/prometheus", template)
 
+    def test_loki_single_binary_uses_a_single_replica_ring(self):
+        values = self.load("charts/monitoring/values.yaml")
+        self.assertEqual("SingleBinary", values["loki"]["deploymentMode"])
+        self.assertEqual(1, values["loki"]["singleBinary"]["replicas"])
+        self.assertEqual(1, values["loki"]["loki"]["commonConfig"]["replication_factor"])
+
     def test_component_scrapes_follow_component_gates_and_label_pipeline(self):
         content = self.load("charts/monitoring/values.yaml")["alloy"]["alloy"]["configMap"]["content"]
         for component in ("mimir", "grafana", "loki", "alloy"):
@@ -240,6 +246,9 @@ class StackContractTests(unittest.TestCase):
     def test_kind_suite_executes_argocd_and_client_stack(self):
         text = (ROOT / "tests/kind/test-stack.sh").read_text()
         self.assertIn("manifests/core-install.yaml", text)
+        self.assertIn("REDIS_IMAGE='redis@sha256:", text)
+        self.assertIn('kind load docker-image "$ARGOCD_REDIS_IMAGE"', text)
+        self.assertLess(text.index('kind load docker-image "$ARGOCD_REDIS_IMAGE"'), text.index("manifests/core-install.yaml"))
         self.assertIn("kind: AppProject", text)
         self.assertIn("name: default", text)
         self.assertLess(text.index("kind: AppProject"), text.index('"$WORK/central.yaml"'))
