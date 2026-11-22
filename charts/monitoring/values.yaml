@@ -289,6 +289,7 @@ alloy:
         loki.write "central" {
           endpoint {
             url = {{ $url := .Values.global.telemetry.lokiPushUrl }}{{ if not $url }}{{ $url = printf "http://%s-loki-gateway.%s.svc:80/loki/api/v1/push" .Release.Name .Release.Namespace }}{{ end }}{{ if and (eq .Values.global.topology "client") (not .Values.global.telemetry.lokiPushUrl) }}{{ fail "telemetry.lokiPushUrl is required when the client topology has no local Loki" }}{{ end }}{{ $url | quote }}
+            headers = {"X-Scope-OrgID" = {{ .Values.global.telemetry.org | quote }}}
           }
         }
 

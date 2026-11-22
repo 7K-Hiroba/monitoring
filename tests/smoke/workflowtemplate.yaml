@@ -47,7 +47,7 @@ spec:
 
             OPENER = urllib.request.build_opener(RejectRedirects)
 
-            def get(base, path, token=""):
+            def get(base, path, token="", tenant=""):
                 if not isinstance(base, str):
                     raise ValueError("invalid endpoint")
                 parsed = urllib.parse.urlsplit(base)
@@ -58,6 +58,8 @@ spec:
                 headers = {"Accept": "application/json"}
                 if token:
                     headers["Authorization"] = "Bearer " + token
+                if tenant:
+                    headers["X-Scope-OrgID"] = tenant
                 request = urllib.request.Request(base.rstrip("/") + path, headers=headers, method="GET")
                 with OPENER.open(request, timeout=15) as response:
                     if response.status != 200:
@@ -185,7 +187,7 @@ spec:
                             raise ValueError("rule evaluation failed")
                     checks["rules"].append({"state": "passed", "file": declared["file"], "evaluation": declared["evaluation"]})
                 if logs:
-                    require_success(get(logs, "/loki/api/v1/labels"), "Loki label query")
+                    require_success(get(logs, "/loki/api/v1/labels", tenant=context["org"]), "Loki label query")
                 return checks
 
             def main():

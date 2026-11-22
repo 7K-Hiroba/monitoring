@@ -29,8 +29,10 @@ class FakeResponse:
 class FakeOpener:
     def __init__(self, handler):
         self.handler = handler
+        self.requests = []
 
     def open(self, request, timeout):
+        self.requests.append(request)
         return FakeResponse(self.handler(request.full_url))
 
 
@@ -81,6 +83,7 @@ class ReadinessSuiteTests(unittest.TestCase):
         context = json.loads((ROOT / "tests/smoke/fixtures/ci-context.json").read_text())
         self.assertEqual(self.suite["target"]["adapter"]["ciContext"], "fixtures/ci-context.json")
         self.assertEqual("ci", context["suite"]["profile"])
+        self.assertEqual("ci", context["org"])
         self.assertEqual("ci-run", context["run"]["id"])
         self.assertEqual("monitoring-overview", context["dashboards"][0]["uid"])
         self.assertEqual(1, len(context["ruleGroups"]))
@@ -139,6 +142,16 @@ class ReadinessSuiteTests(unittest.TestCase):
         self.assertEqual("mimir", self.ci_context()["datasource"])
         self.assertEqual("monitoring-overview", checks["dashboards"][0]["uid"])
         self.assertEqual("central", checks["rules"][0]["evaluation"])
+
+    def test_verifier_sends_the_selected_org_to_loki(self):
+        verifier = self.verifier()
+        opener = FakeOpener(self.successful_payload)
+        verifier["OPENER"] = opener
+        verifier["ALLOW_PLAINTEXT"] = True
+        verifier["verify"](self.ci_context(), "")
+        request = next(item for item in opener.requests if item.full_url.endswith("/loki/api/v1/labels"))
+        headers = {name.lower(): value for name, value in request.headers.items()}
+        self.assertEqual("ci", headers["x-scope-orgid"])
 
     def test_verifier_rejects_wrong_panel_datasource(self):
         def wrong_datasource(url):

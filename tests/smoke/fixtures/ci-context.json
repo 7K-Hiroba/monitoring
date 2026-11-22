@@ -1,6 +1,7 @@
 {
   "companion": {"id": "ci-companion", "generation": 1},
   "target": {"id": "ci-target", "revision": 1, "clusterId": "kind-ci"},
+  "org": "ci",
   "app": {
     "planId": "ci-plan",
     "instanceId": "ci-instance",
