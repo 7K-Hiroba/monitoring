@@ -6,7 +6,7 @@
   "metric": "up",
   "labels": {
     "cluster": "kind-ci",
-    "instance": "metrics:8000",
+    "instance": "ci",
     "job": "mimir",
     "org": "ci"
   },

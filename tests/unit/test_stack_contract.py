@@ -95,7 +95,7 @@ class StackContractTests(unittest.TestCase):
         self.assertTrue(values["global"]["telemetry"]["org"])
         alloy = values["alloy"]["alloy"]["configMap"]["content"]
         self.assertIn('target_label = "org"', alloy)
-        self.assertIn('replacement = "{{ .Values.global.telemetry.org }}"', alloy)
+        self.assertIn('replacement = {{ .Values.global.telemetry.org | quote }}', alloy)
         chart_schema = self.load("charts/monitoring/values.schema.json")
         self.assertEqual(1, chart_schema["properties"]["global"]["properties"]["telemetry"]["properties"]["org"]["minLength"])
         rgd = self.load("packages/monitoring-stack/rgd.yaml")

@@ -34,8 +34,11 @@ class ObservabilityContractTests(unittest.TestCase):
         self.assertEqual("alloy-v1.13.0", fixture["fixtureVersion"])
         self.assertEqual("inari.monitoring.post-alloy-labels/v1", fixture["labelContract"])
         self.assertEqual("up", fixture["metric"])
-        self.assertEqual({"org": "ci", "cluster": "kind-ci", "job": "mimir", "instance": "metrics:8000"}, fixture["labels"])
+        self.assertEqual(1, fixture["value"])
+        self.assertEqual({"org": "ci", "cluster": "kind-ci", "job": "mimir", "instance": "ci"}, fixture["labels"])
         self.assertTrue(fixture["reviewRequired"])
+        config = (ROOT / "observability/tests/alloy/config.river").read_text()
+        self.assertIn('metrics_path    = "/input.prom"', config)
 
     def test_generated_chart_and_pack_match_central_and_local_assets(self):
         for relative in (

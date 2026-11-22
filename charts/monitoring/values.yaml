@@ -187,7 +187,7 @@ alloy:
           targets = discovery.kubernetes.nodes.targets
           scheme = "https"
           tls_config {
-            ca_file = "{{ .Values.global.collectors.kubelet.caFile }}"
+            ca_file = {{ .Values.global.collectors.kubelet.caFile | quote }}
             insecure_skip_verify = {{ .Values.global.collectors.kubelet.insecureSkipVerify }}
           }
           authorization {
@@ -200,7 +200,7 @@ alloy:
         prometheus.scrape "control_plane" {
           targets = [
             {{- range .Values.global.collectors.controlPlane.targets }}
-            {"__address__" = "{{ . }}", "job" = "control-plane"},
+            {"__address__" = {{ . | quote }}, "job" = "control-plane"},
             {{- end }}
           ]
           scheme = "https"
@@ -254,7 +254,7 @@ alloy:
         prometheus.relabel "central" {
           rule {
             target_label = "org"
-            replacement = "{{ .Values.global.telemetry.org }}"
+            replacement = {{ .Values.global.telemetry.org | quote }}
           }
           rule {
             target_label = "cluster"
@@ -265,7 +265,7 @@ alloy:
 
         prometheus.remote_write "mimir" {
           endpoint {
-            url = "{{ $url := .Values.global.telemetry.remoteWriteUrl }}{{ if not $url }}{{ $url = printf "http://%s-mimir-gateway.%s.svc:80/api/v1/push" .Release.Name .Release.Namespace }}{{ end }}{{ if and (eq .Values.global.topology "client") (not .Values.global.telemetry.remoteWriteUrl) }}{{ fail "telemetry.remoteWriteUrl is required when the client topology has no local Mimir" }}{{ end }}{{ $url }}"
+            url = {{ $url := .Values.global.telemetry.remoteWriteUrl }}{{ if not $url }}{{ $url = printf "http://%s-mimir-gateway.%s.svc:80/api/v1/push" .Release.Name .Release.Namespace }}{{ end }}{{ if and (eq .Values.global.topology "client") (not .Values.global.telemetry.remoteWriteUrl) }}{{ fail "telemetry.remoteWriteUrl is required when the client topology has no local Mimir" }}{{ end }}{{ $url | quote }}
           }
         }
 
@@ -280,7 +280,7 @@ alloy:
 
         loki.write "central" {
           endpoint {
-            url = "{{ $url := .Values.global.telemetry.lokiPushUrl }}{{ if not $url }}{{ $url = printf "http://%s-loki-gateway.%s.svc:80/loki/api/v1/push" .Release.Name .Release.Namespace }}{{ end }}{{ if and (eq .Values.global.topology "client") (not .Values.global.telemetry.lokiPushUrl) }}{{ fail "telemetry.lokiPushUrl is required when the client topology has no local Loki" }}{{ end }}{{ $url }}"
+            url = {{ $url := .Values.global.telemetry.lokiPushUrl }}{{ if not $url }}{{ $url = printf "http://%s-loki-gateway.%s.svc:80/loki/api/v1/push" .Release.Name .Release.Namespace }}{{ end }}{{ if and (eq .Values.global.topology "client") (not .Values.global.telemetry.lokiPushUrl) }}{{ fail "telemetry.lokiPushUrl is required when the client topology has no local Loki" }}{{ end }}{{ $url | quote }}
           }
         }
 
