@@ -35,7 +35,7 @@ spec:
       lokiCredentialsSecret: string | default=""
       lokiS3ForcePathStyle: boolean | default=false
     status:
-      ready: ${has(application.status.health.status) && application.status.health.status == "Healthy" && has(application.status.sync.status) && application.status.sync.status == "Synced"}
+      ready: ${application.?status.?health.?status.orValue("") == "Healthy" && application.?status.?sync.?status.orValue("") == "Synced"}
   resources:
     - id: application
       template:
@@ -85,11 +85,33 @@ spec:
                       targets: '${schema.spec.controlPlaneTargets == "" ? [] : schema.spec.controlPlaneTargets.split(",")}'
                 mimir-distributed:
                   global:
-                    extraEnvFrom: '${schema.spec.mimirCredentialsSecret == "" ? [] : [{"secretRef": {"name": schema.spec.mimirCredentialsSecret}}]}'
+                    # KRO v0.6.1 does not recursively convert CEL map/list
+                    # literals. Keep this list static and vary only its scalar
+                    # secret name; optional preserves secret-free MinIO CI.
+                    extraEnvFrom:
+                      - secretRef:
+                          name: '${schema.spec.mimirCredentialsSecret == "" ? "monitoring-mimir-credentials-absent" : schema.spec.mimirCredentialsSecret}'
+                          optional: true
                   minio:
                     enabled: ${schema.spec.ephemeralObjectStorage}
                   mimir:
-                    structuredConfig: '${schema.spec.ephemeralObjectStorage ? {} : {"blocks_storage": {"backend": "s3", "s3": {"bucket_name": schema.spec.mimirBlocksBucket, "endpoint": schema.spec.mimirS3Endpoint, "region": schema.spec.mimirS3Region, "force_path_style": schema.spec.mimirS3ForcePathStyle}}, "alertmanager_storage": {"backend": "s3", "s3": {"bucket_name": schema.spec.mimirAlertmanagerBucket, "endpoint": schema.spec.mimirS3Endpoint, "region": schema.spec.mimirS3Region, "force_path_style": schema.spec.mimirS3ForcePathStyle}}}}'
+                    structuredConfig:
+                      blocks_storage:
+                        backend: s3
+                        s3:
+                          bucket_name: '${schema.spec.ephemeralObjectStorage ? "mimir-tsdb" : schema.spec.mimirBlocksBucket}'
+                          endpoint: '${schema.spec.ephemeralObjectStorage ? schema.spec.name + "-minio." + schema.spec.namespace + ".svc:9000" : schema.spec.mimirS3Endpoint}'
+                          region: ${schema.spec.mimirS3Region}
+                          force_path_style: ${schema.spec.mimirS3ForcePathStyle}
+                          insecure: ${schema.spec.ephemeralObjectStorage}
+                      alertmanager_storage:
+                        backend: s3
+                        s3:
+                          bucket_name: '${schema.spec.ephemeralObjectStorage ? "mimir-ruler" : schema.spec.mimirAlertmanagerBucket}'
+                          endpoint: '${schema.spec.ephemeralObjectStorage ? schema.spec.name + "-minio." + schema.spec.namespace + ".svc:9000" : schema.spec.mimirS3Endpoint}'
+                          region: ${schema.spec.mimirS3Region}
+                          force_path_style: ${schema.spec.mimirS3ForcePathStyle}
+                          insecure: ${schema.spec.ephemeralObjectStorage}
                 loki:
                   loki:
                     schemaConfig:
@@ -113,7 +135,10 @@ spec:
                   singleBinary:
                     persistence:
                       enabled: ${!schema.spec.ephemeralObjectStorage}
-                    extraEnvFrom: '${schema.spec.lokiCredentialsSecret == "" ? [] : [{"secretRef": {"name": schema.spec.lokiCredentialsSecret}}]}'
+                    extraEnvFrom:
+                      - secretRef:
+                          name: '${schema.spec.lokiCredentialsSecret == "" ? "monitoring-loki-credentials-absent" : schema.spec.lokiCredentialsSecret}'
+                          optional: true
           syncPolicy:
             automated: {}
             syncOptions:

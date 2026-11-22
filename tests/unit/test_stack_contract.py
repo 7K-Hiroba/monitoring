@@ -76,6 +76,7 @@ class StackContractTests(unittest.TestCase):
         ruler = values["mimir-distributed"]["ruler"]
         config = values["mimir-distributed"]["mimir"]["structuredConfig"]
         self.assertFalse(config["ingest_storage"]["enabled"])
+        self.assertTrue(config["ingester"]["push_grpc_method_enabled"])
         self.assertEqual("/data/ruler", config["ruler"]["rule_path"])
         self.assertEqual("local", config["ruler_storage"]["backend"])
         self.assertEqual("/data/rules", config["ruler_storage"]["local"]["directory"])
@@ -126,8 +127,9 @@ class StackContractTests(unittest.TestCase):
         expected = '${schema.spec.ephemeralObjectStorage ? "filesystem" : "s3"}'
         self.assertEqual(expected, loki["loki"]["storage"]["type"])
         self.assertEqual(expected, loki["loki"]["schemaConfig"]["configs"][0]["object_store"])
-        self.assertIn("secretRef", loki["singleBinary"]["extraEnvFrom"])
-        self.assertIn("schema.spec.lokiCredentialsSecret", loki["singleBinary"]["extraEnvFrom"])
+        secret = loki["singleBinary"]["extraEnvFrom"][0]["secretRef"]
+        self.assertTrue(secret["optional"])
+        self.assertIn("schema.spec.lokiCredentialsSecret", secret["name"])
         rendered = yaml.dump(rgd)
         self.assertNotIn("secretAccessKey", rendered)
         self.assertNotIn("accessKeyId", rendered)
@@ -139,11 +141,18 @@ class StackContractTests(unittest.TestCase):
             self.assertIn(field, schema)
         mimir = rgd["spec"]["resources"][0]["template"]["spec"]["source"]["helm"]["valuesObject"]["mimir-distributed"]
         structured = mimir["mimir"]["structuredConfig"]
-        self.assertIn("blocks_storage", structured)
-        self.assertIn("alertmanager_storage", structured)
-        self.assertIn("schema.spec.mimirBlocksBucket", structured)
-        self.assertIn("schema.spec.mimirAlertmanagerBucket", structured)
-        self.assertIn("schema.spec.mimirCredentialsSecret", mimir["global"]["extraEnvFrom"])
+        blocks = structured["blocks_storage"]["s3"]
+        alerts = structured["alertmanager_storage"]["s3"]
+        self.assertIn("schema.spec.mimirBlocksBucket", blocks["bucket_name"])
+        self.assertIn("schema.spec.mimirAlertmanagerBucket", alerts["bucket_name"])
+        self.assertIn("schema.spec.mimirS3Endpoint", blocks["endpoint"])
+        self.assertIn("schema.spec.mimirS3Endpoint", alerts["endpoint"])
+        secret = mimir["global"]["extraEnvFrom"][0]["secretRef"]
+        self.assertTrue(secret["optional"])
+        self.assertIn("schema.spec.mimirCredentialsSecret", secret["name"])
+        status = rgd["spec"]["schema"]["status"]["ready"]
+        self.assertIn('application.?status.?health.?status.orValue("")', status)
+        self.assertIn('application.?status.?sync.?status.orValue("")', status)
         rendered = yaml.dump(rgd)
         self.assertNotIn("secretAccessKey", rendered)
         self.assertNotIn("accessKeyId", rendered)

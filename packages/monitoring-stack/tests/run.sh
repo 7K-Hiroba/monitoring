@@ -52,6 +52,12 @@ test "$(kubectl get application monitoring-fixture -n argocd -o jsonpath='{.spec
 test "$(kubectl get application monitoring-fixture -n argocd -o jsonpath='{.spec.source.helm.valuesObject.loki.loki.storage.s3.region}')" = test-1
 test "$(kubectl get application monitoring-fixture -n argocd -o jsonpath='{.spec.source.helm.valuesObject.loki.loki.storage.s3.s3ForcePathStyle}')" = true
 test "$(kubectl get application monitoring-fixture -n argocd -o jsonpath='{.spec.source.helm.valuesObject.loki.singleBinary.extraEnvFrom[0].secretRef.name}')" = loki-credentials
+test "$(kubectl get application monitoring-fixture -n argocd -o jsonpath='{.spec.source.helm.valuesObject.mimir-distributed.mimir.structuredConfig.blocks_storage.s3.bucket_name}')" = mimir-blocks-ci
+test "$(kubectl get application monitoring-fixture -n argocd -o jsonpath='{.spec.source.helm.valuesObject.mimir-distributed.mimir.structuredConfig.blocks_storage.s3.endpoint}')" = s3.example.com
+test "$(kubectl get application monitoring-fixture -n argocd -o jsonpath='{.spec.source.helm.valuesObject.mimir-distributed.mimir.structuredConfig.alertmanager_storage.s3.bucket_name}')" = mimir-alertmanager-ci
+test "$(kubectl get application monitoring-fixture -n argocd -o jsonpath='{.spec.source.helm.valuesObject.mimir-distributed.global.extraEnvFrom[0].secretRef.name}')" = mimir-credentials
+test "$(kubectl get application monitoring-central -n argocd -o jsonpath='{.spec.source.helm.valuesObject.mimir-distributed.mimir.structuredConfig.blocks_storage.s3.bucket_name}')" = mimir-tsdb
+test "$(kubectl get application monitoring-central -n argocd -o jsonpath='{.spec.source.helm.valuesObject.mimir-distributed.mimir.structuredConfig.blocks_storage.s3.endpoint}')" = monitoring-central-minio.monitoring.svc:9000
 test "$(kubectl get application monitoring-client -n argocd -o jsonpath='{.spec.source.helm.valuesObject.topology}')" = client
 test "$(kubectl get application monitoring-client -n argocd -o jsonpath='{.spec.source.helm.valuesObject.components.mimir}')" = false
 test "$(kubectl get application monitoring-client -n argocd -o jsonpath='{.spec.source.helm.valuesObject.components.alertmanager}')" = false
