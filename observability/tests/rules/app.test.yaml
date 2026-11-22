@@ -4,7 +4,7 @@ rule_files:
 tests:
   - interval: 1m
     input_series:
-      - series: 'up{job="mimir"}'
+      - series: 'up{org="acme",cluster="central",job="mimir",instance="mimir-0"}'
         values: '1 1 1 1 0 0 0 0 0 0 0'
     promql_expr_test:
       - expr: monitoring:up:sum
@@ -19,7 +19,10 @@ tests:
           - exp_labels:
               alertname: MonitoringTargetDown
               app: monitoring
+              cluster: central
+              instance: mimir-0
               job: mimir
+              org: acme
               severity: critical
             exp_annotations:
               summary: Monitoring target is down

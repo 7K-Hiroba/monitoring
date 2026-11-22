@@ -46,6 +46,13 @@ class ObservabilityContractTests(unittest.TestCase):
             self.assertIn("monitoring:up:sum", text)
             self.assertIn("MonitoringClientDown", text)
             self.assertNotIn("workflows_scaffold", text)
+        dashboard = (ROOT / "charts/monitoring/templates/observability/dashboards.yaml").read_text()
+        self.assertIn("inari.dev/folder: monitoring", dashboard)
+        chart_rules = (ROOT / "charts/monitoring/templates/observability/rules.yaml").read_text()
+        self.assertIn("kind: ConfigMap", chart_rules)
+        for evaluation in ("central", "local"):
+            self.assertIn(f"name: monitoring-{evaluation}-rules", chart_rules)
+            self.assertIn(f"{evaluation}.yaml:", chart_rules)
         pack = yaml.safe_load((ROOT / "packages/observability-pack/rgd.yaml").read_text())
         self.assertEqual("inari.observability-pack/v2", pack["metadata"]["annotations"]["inari.dev/observability-render-contract"])
         self.assertNotIn("permissions", yaml.dump(pack))

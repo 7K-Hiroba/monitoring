@@ -3,7 +3,9 @@ kind: UIHints
 package: monitoring-stack
 groups:
   - name: Stack
-    fields: [name, namespace, topology, chartVersion, chartDigest]
+    fields: [name, namespace, topology, org, chartVersion, chartDigest]
+  - name: Object storage
+    fields: [ephemeralObjectStorage, lokiS3Endpoint, lokiS3Region, lokiChunksBucket, lokiRulerBucket, lokiS3ForcePathStyle, lokiCredentialsSecret]
   - name: GitOps
     fields: [project, argocdNamespace]
   - name: Client telemetry
@@ -12,10 +14,18 @@ fields:
   name: {widget: text, help: ArgoCD Application and Helm release name.}
   namespace: {widget: namespacePicker, help: Namespace for the observability stack.}
   topology: {widget: select, help: central, local, or client. Mimir replaces Prometheus in every topology.}
+  org: {widget: text, help: Required organization label attached after Alloy processing.}
   chartVersion: {widget: text, help: Exact monitoring chart SemVer.}
   chartDigest: {widget: text, help: Exact sha256 OCI digest of the signed monitoring chart.}
   project: {widget: text, help: Existing policy-approved ArgoCD project.}
   argocdNamespace: {widget: namespacePicker, help: Namespace containing ArgoCD Applications.}
+  ephemeralObjectStorage: {widget: checkbox, help: CI-only MinIO and Loki filesystem storage.}
+  lokiS3Endpoint: {widget: text, help: External S3 endpoint for non-ephemeral Loki storage.}
+  lokiS3Region: {widget: text, help: External S3 region.}
+  lokiChunksBucket: {widget: text, help: External Loki chunks bucket.}
+  lokiRulerBucket: {widget: text, help: External Loki ruler bucket.}
+  lokiS3ForcePathStyle: {widget: checkbox, help: Use path-style S3 requests when required by the provider.}
+  lokiCredentialsSecret: {widget: text, help: Existing namespace Secret with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY; credentials are never stored in the RGD.}
   remoteWriteUrl: {widget: text, help: Required for client clusters without local Mimir.}
   lokiPushUrl: {widget: text, help: Required for client clusters without local Loki.}
   controlPlaneTargets: {widget: text, help: Optional comma-separated control-plane metrics addresses for the reviewed environment.}

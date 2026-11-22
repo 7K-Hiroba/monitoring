@@ -10,6 +10,7 @@ metadata:
     grafana_dashboard: '1'
   annotations:
     inari.dev/dashboard-uid: monitoring-overview
+    inari.dev/folder: monitoring
 data:
   monitoring-overview.json: "{\n  \"panels\": [\n    {\n      \"datasource\": {\n\
     \        \"type\": \"prometheus\",\n        \"uid\": \"${DS_PROMETHEUS}\"\n  \
@@ -18,14 +19,15 @@ data:
     ,\n      \"fieldConfig\": {\n        \"defaults\": {\n          \"unit\": \"short\"\
     \n        }\n      },\n      \"gridPos\": {\n        \"h\": 8,\n        \"w\"\
     : 24,\n        \"x\": 0,\n        \"y\": 0\n      },\n      \"id\": 1,\n     \
-    \ \"targets\": [\n        {\n          \"expr\": \"sum by (job, cluster) (up)\"\
-    ,\n          \"refId\": \"A\"\n        }\n      ],\n      \"title\": \"Observability\
-    \ target availability\",\n      \"type\": \"timeseries\"\n    }\n  ],\n  \"schemaVersion\"\
-    : 40,\n  \"templating\": {\n    \"list\": [\n      {\n        \"name\": \"namespace\"\
-    ,\n        \"type\": \"textbox\",\n        \"value\": \"monitoring\"\n      },\n\
-    \      {\n        \"current\": {\n          \"text\": \"Mimir\",\n          \"\
-    value\": \"mimir\"\n        },\n        \"name\": \"DS_PROMETHEUS\",\n       \
-    \ \"query\": \"prometheus\",\n        \"type\": \"datasource\"\n      }\n    ]\n\
-    \  },\n  \"title\": \"Monitoring stack overview\",\n  \"uid\": \"monitoring-overview\"\
-    \n}\n"
+    \ \"targets\": [\n        {\n          \"expr\": \"sum by (org, cluster, job,\
+    \ instance) (up{org=~\\\".+\\\", cluster=~\\\".+\\\", job=~\\\".+\\\", instance=~\\\
+    \".+\\\"})\",\n          \"refId\": \"A\"\n        }\n      ],\n      \"title\"\
+    : \"Observability target availability\",\n      \"type\": \"timeseries\"\n   \
+    \ }\n  ],\n  \"schemaVersion\": 40,\n  \"templating\": {\n    \"list\": [\n  \
+    \    {\n        \"name\": \"namespace\",\n        \"type\": \"textbox\",\n   \
+    \     \"value\": \"monitoring\"\n      },\n      {\n        \"current\": {\n \
+    \         \"text\": \"Mimir\",\n          \"value\": \"mimir\"\n        },\n \
+    \       \"name\": \"DS_PROMETHEUS\",\n        \"query\": \"prometheus\",\n   \
+    \     \"type\": \"datasource\"\n      }\n    ]\n  },\n  \"title\": \"Monitoring\
+    \ stack overview\",\n  \"uid\": \"monitoring-overview\"\n}\n"
 {{- end }}

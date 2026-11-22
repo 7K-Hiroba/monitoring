@@ -48,28 +48,98 @@ class StackContractTests(unittest.TestCase):
             self.assertTrue(values["global"]["collectors"]["kubelet"]["enabled"])
             self.assertTrue(values["global"]["collectors"]["controlPlane"]["enabled"])
 
-    def test_kro_rgd_uses_only_digest_pinned_signed_chart_and_no_prometheus_server(self):
+    def test_kro_rgd_uses_exact_version_and_retains_digest_evidence(self):
         rgd = self.load("packages/monitoring-stack/rgd.yaml")
         self.assertEqual("ResourceGraphDefinition", rgd["kind"])
-        schema = rgd["spec"]["schema"]["spec"]
+        schema = rgd["spec"]["schema"]
         for field in ("chartVersion", "chartDigest"):
-            self.assertIn(field, schema)
+            self.assertIn(field, schema["spec"])
+        self.assertEqual({"ready"}, set(schema["status"]))
+        self.assertNotIn("schema.spec", schema["status"]["ready"])
         application = rgd["spec"]["resources"][0]["template"]
         self.assertEqual("Application", application["kind"])
         source = application["spec"]["source"]
         self.assertEqual("ghcr.io/7k-hiroba/monitoring/charts", source["repoURL"])
         self.assertEqual("monitoring", source["chart"])
-        self.assertEqual("${schema.spec.chartDigest}", source["targetRevision"])
+        self.assertEqual("${schema.spec.chartVersion}", source["targetRevision"])
+        self.assertEqual("${schema.spec.chartDigest}", application["metadata"]["annotations"]["inari.dev/chart-digest"])
         rendered = yaml.dump(rgd)
         self.assertNotIn("kube-prometheus-stack", rendered)
         self.assertNotIn("kind: Prometheus\n", rendered)
+
+    def test_mimir_uses_read_only_local_rule_storage_and_writable_scratch(self):
+        values = self.load("charts/monitoring/values.yaml")
+        ruler = values["mimir-distributed"]["ruler"]
+        config = values["mimir-distributed"]["mimir"]["structuredConfig"]
+        self.assertEqual("/data/ruler", config["ruler"]["rule_path"])
+        self.assertEqual("local", config["ruler_storage"]["backend"])
+        self.assertEqual("/data/rules", config["ruler_storage"]["local"]["directory"])
+        self.assertEqual(1, len(ruler["extraVolumes"]))
+        sources = ruler["extraVolumes"][0]["projected"]["sources"]
+        self.assertEqual(2, len(sources))
+        for evaluation, source in zip(("central", "local"), sources):
+            volume = source["configMap"]
+            self.assertEqual(f"monitoring-{evaluation}-rules", volume["name"])
+            self.assertEqual(f"{evaluation}.yaml", volume["items"][0]["key"])
+            self.assertEqual(f"anonymous/{evaluation}.yaml", volume["items"][0]["path"])
+        self.assertEqual("/data/rules", ruler["extraVolumeMounts"][0]["mountPath"])
+        self.assertTrue(ruler["extraVolumeMounts"][0]["readOnly"])
+
+    def test_required_org_label_flows_through_chart_and_rgd(self):
+        values = self.load("charts/monitoring/values.yaml")
+        self.assertTrue(values["global"]["telemetry"]["org"])
+        alloy = values["alloy"]["alloy"]["configMap"]["content"]
+        self.assertIn('target_label = "org"', alloy)
+        self.assertIn('replacement = "{{ .Values.global.telemetry.org }}"', alloy)
+        chart_schema = self.load("charts/monitoring/values.schema.json")
+        self.assertEqual(1, chart_schema["properties"]["global"]["properties"]["telemetry"]["properties"]["org"]["minLength"])
+        rgd = self.load("packages/monitoring-stack/rgd.yaml")
+        self.assertEqual("string | required=true", rgd["spec"]["schema"]["spec"]["org"])
+        telemetry = rgd["spec"]["resources"][0]["template"]["spec"]["source"]["helm"]["valuesObject"]["global"]["telemetry"]
+        self.assertEqual("${schema.spec.org}", telemetry["org"])
+        package_schema = self.load("packages/monitoring-stack/values.schema.json")
+        self.assertIn("org", package_schema["required"])
+
+    def test_component_scrapes_follow_component_gates_and_label_pipeline(self):
+        content = self.load("charts/monitoring/values.yaml")["alloy"]["alloy"]["configMap"]["content"]
+        for component in ("mimir", "grafana", "loki", "alloy"):
+            self.assertIn(f'prometheus.scrape "{component}"', content)
+        self.assertEqual(3, content.count('if ne .Values.global.topology "client"'))
+        self.assertEqual("SingleBinary", self.load("charts/monitoring/values.yaml")["loki"]["deploymentMode"])
+        self.assertGreaterEqual(content.count("forward_to = [prometheus.relabel.central.receiver]"), 8)
+        self.assertIn("targets = discovery.kubernetes.pods.targets", content)
+        rbac = (ROOT / "charts/monitoring/templates/collector-rbac.yaml").read_text()
+        self.assertIn("pods/log", rbac)
+
+    def test_rgd_loki_storage_supports_ephemeral_and_external_secret_reference(self):
+        rgd = self.load("packages/monitoring-stack/rgd.yaml")
+        schema = rgd["spec"]["schema"]["spec"]
+        for field in ("lokiS3Endpoint", "lokiS3Region", "lokiChunksBucket", "lokiRulerBucket", "lokiCredentialsSecret", "lokiS3ForcePathStyle"):
+            self.assertIn(field, schema)
+        loki = rgd["spec"]["resources"][0]["template"]["spec"]["source"]["helm"]["valuesObject"]["loki"]
+        expected = '${schema.spec.ephemeralObjectStorage ? "filesystem" : "s3"}'
+        self.assertEqual(expected, loki["loki"]["storage"]["type"])
+        self.assertEqual(expected, loki["loki"]["schemaConfig"]["configs"][0]["object_store"])
+        self.assertIn("secretRef", loki["singleBinary"]["extraEnvFrom"])
+        self.assertIn("schema.spec.lokiCredentialsSecret", loki["singleBinary"]["extraEnvFrom"])
+        rendered = yaml.dump(rgd)
+        self.assertNotIn("secretAccessKey", rendered)
+        self.assertNotIn("accessKeyId", rendered)
+
+    def test_kro_tests_prepare_argocd_namespace_and_crd(self):
+        for relative in ("packages/monitoring-stack/tests/run.sh", "tests/kind/test-stack.sh"):
+            text = (ROOT / relative).read_text()
+            with self.subTest(path=relative):
+                self.assertIn("kubectl create namespace argocd", text)
+                self.assertIn("kubectl wait --for=condition=Established crd/applications.argoproj.io", text)
+                self.assertLess(text.index("crd/applications.argoproj.io"), text.index("rgd.yaml"))
 
     def test_workflow_callers_use_the_approved_immutable_release(self):
         for path in (ROOT / ".github/workflows").glob("*.yml"):
             text = path.read_text()
             for line in text.splitlines():
                 if "7K-Hiroba/workflows/" in line and "uses:" in line:
-                    self.assertIn("65ed5e9404b187877e97f71ff8a7374a69cd5097", line, f"{path}: mutable workflow pin")
+                    self.assertIn("a2facca81055096a0a12893e0fc11cb082c38183", line, f"{path}: mutable workflow pin")
 
 
 if __name__ == "__main__":

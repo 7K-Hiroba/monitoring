@@ -10,6 +10,6 @@ KRO-managed full Kubernetes observability stack. The RGD creates an ArgoCD `Appl
 
 **Mimir is the only metrics backend and rule evaluator. No Prometheus server or `kube-prometheus-stack` dependency is deployed.** Prometheus-compatible metric exposition, PromQL, remote-write, and rule formats are interfaces used by Alloy, Mimir, and promtool.
 
-Mimir and Loki require production object storage and retention configuration. `ephemeralObjectStorage` is only for isolated kind/CI fixtures and must not be enabled by production policy. Secrets stay in approved secret stores and are referenced by environment-specific configuration, never embedded in this package.
+Mimir and Loki require production object storage and retention configuration. `ephemeralObjectStorage` is only for isolated kind/CI fixtures and must not be enabled by production policy. For Loki, set the non-secret S3 endpoint/region/bucket fields and optionally name an existing namespace Secret containing `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`; credentials are never embedded in this package. The required `org` field is propagated to every post-Alloy metric series.
 
 See `docs/architecture.md`, `docs/onboarding.md`, and `docs/runbook.md` for target registration and operational gates.

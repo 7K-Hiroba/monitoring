@@ -6,6 +6,7 @@ metadata:
 spec:
   name: monitoring-local
   topology: local
+  org: ci
   chartVersion: 0.1.0
   chartDigest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
   ephemeralObjectStorage: true

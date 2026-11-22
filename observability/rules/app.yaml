@@ -3,9 +3,9 @@ groups:
     interval: 1m
     rules:
       - record: monitoring:up:sum
-        expr: sum(up)
+        expr: sum(up{org=~".+", cluster=~".+", job=~".+", instance=~".+"})
       - alert: MonitoringTargetDown
-        expr: up == 0
+        expr: up{org=~".+", cluster=~".+", job=~".+", instance=~".+"} == 0
         for: 5m
         labels:
           severity: critical

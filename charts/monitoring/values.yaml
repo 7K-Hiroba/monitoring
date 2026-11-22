@@ -12,6 +12,7 @@ components:
 global:
   topology: central
   telemetry:
+    org: monitoring
     remoteWriteUrl: ""
     lokiPushUrl: ""
   collectors:
@@ -52,25 +53,33 @@ mimir-distributed:
   ruler:
     replicas: 1
     extraVolumes:
-      - name: central-rules
-        configMap:
-          name: monitoring-central-rules
-          optional: true
-      - name: local-rules
-        configMap:
-          name: monitoring-local-rules
-          optional: true
+      - name: rules
+        projected:
+          sources:
+            - configMap:
+                name: monitoring-central-rules
+                optional: true
+                items:
+                  - key: central.yaml
+                    path: anonymous/central.yaml
+            - configMap:
+                name: monitoring-local-rules
+                optional: true
+                items:
+                  - key: local.yaml
+                    path: anonymous/local.yaml
     extraVolumeMounts:
-      - name: central-rules
-        mountPath: /data/central
-        readOnly: true
-      - name: local-rules
-        mountPath: /data/local
+      - name: rules
+        mountPath: /data/rules
         readOnly: true
   mimir:
     structuredConfig:
       ruler:
-        rule_path: /data/{{ .Values.global.topology }}
+        rule_path: /data/ruler
+      ruler_storage:
+        backend: local
+        local:
+          directory: /data/rules
   alertmanager:
     enabled: true
     replicas: 1
@@ -83,7 +92,7 @@ mimir-distributed:
       enabled: false
 
 loki:
-  deploymentMode: Monolithic
+  deploymentMode: SingleBinary
   loki:
     schemaConfig:
       configs:
@@ -203,7 +212,49 @@ alloy:
         }
         {{- end }}
 
+        {{- if ne .Values.global.topology "client" }}
+        prometheus.scrape "mimir" {
+          targets = [
+            {"__address__" = "{{ .Release.Name }}-mimir-alertmanager.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
+            {"__address__" = "{{ .Release.Name }}-mimir-compactor.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
+            {"__address__" = "{{ .Release.Name }}-mimir-distributor.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
+            {"__address__" = "{{ .Release.Name }}-mimir-gateway.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
+            {"__address__" = "{{ .Release.Name }}-mimir-ingester.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
+            {"__address__" = "{{ .Release.Name }}-mimir-overrides-exporter.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
+            {"__address__" = "{{ .Release.Name }}-mimir-querier.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
+            {"__address__" = "{{ .Release.Name }}-mimir-query-frontend.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
+            {"__address__" = "{{ .Release.Name }}-mimir-query-scheduler.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
+            {"__address__" = "{{ .Release.Name }}-mimir-ruler.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
+            {"__address__" = "{{ .Release.Name }}-mimir-store-gateway.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
+          ]
+          forward_to = [prometheus.relabel.central.receiver]
+        }
+        {{- end }}
+
+        {{- if ne .Values.global.topology "client" }}
+        prometheus.scrape "grafana" {
+          targets = [{"__address__" = "{{ .Release.Name }}-grafana.{{ .Release.Namespace }}.svc:80", "job" = "grafana"}]
+          forward_to = [prometheus.relabel.central.receiver]
+        }
+        {{- end }}
+
+        {{- if ne .Values.global.topology "client" }}
+        prometheus.scrape "loki" {
+          targets = [{"__address__" = "{{ .Release.Name }}-loki.{{ .Release.Namespace }}.svc:3100", "job" = "loki"}]
+          forward_to = [prometheus.relabel.central.receiver]
+        }
+        {{- end }}
+
+        prometheus.scrape "alloy" {
+          targets = [{"__address__" = "{{ .Release.Name }}-alloy.{{ .Release.Namespace }}.svc:12345", "job" = "alloy"}]
+          forward_to = [prometheus.relabel.central.receiver]
+        }
+
         prometheus.relabel "central" {
+          rule {
+            target_label = "org"
+            replacement = "{{ .Values.global.telemetry.org }}"
+          }
           rule {
             target_label = "cluster"
             replacement = "{{ .Release.Name }}"
@@ -217,7 +268,12 @@ alloy:
           }
         }
 
+        discovery.kubernetes "pods" {
+          role = "pod"
+        }
+
         loki.source.kubernetes "pods" {
+          targets = discovery.kubernetes.pods.targets
           forward_to = [loki.write.central.receiver]
         }
 

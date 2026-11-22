@@ -10,6 +10,7 @@ components:
 global:
   topology: client
   telemetry:
+    org: ci
     remoteWriteUrl: http://mimir-central.observability.svc:80/api/v1/push
     lokiPushUrl: http://loki-central.observability.svc:80/loki/api/v1/push
   collectors:

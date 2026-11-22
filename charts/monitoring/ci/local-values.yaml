@@ -9,6 +9,8 @@ components:
   nodeExporter: true
 global:
   topology: local
+  telemetry:
+    org: ci
   collectors:
     kubelet:
       enabled: true

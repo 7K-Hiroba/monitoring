@@ -5,7 +5,7 @@ metadata:
   name: {{ .Release.Name }}-telemetry-read
 rules:
   - apiGroups: [""]
-    resources: [nodes, nodes/metrics, services, endpoints, pods, namespaces]
+    resources: [nodes, nodes/metrics, services, endpoints, pods, pods/log, namespaces]
     verbs: [get, list, watch]
   - nonResourceURLs: ["/metrics"]
     verbs: [get]

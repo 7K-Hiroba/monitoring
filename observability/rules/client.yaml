@@ -3,7 +3,7 @@ groups:
     interval: 1m
     rules:
       - alert: MonitoringClientDown
-        expr: up{job=~"alloy|kube-state-metrics|node-exporter"} == 0
+        expr: up{org=~".+", cluster=~".+", job=~"alloy|kube-state-metrics|node-exporter", instance=~".+"} == 0
         for: 5m
         labels:
           severity: critical

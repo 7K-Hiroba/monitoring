@@ -17,11 +17,11 @@ WORK=$(mktemp -d)
 NETWORK="monitoring-alloy-$$"
 PREFIX="monitoring-alloy-$$"
 PYTHON_IMAGE='python@sha256:7fbad8e4652eae0186429a6f26cf5b23e27e8c6fd7ac4d0cfd7a6988cdeea1e1'
-PROMETHEUS_IMAGE='prom/prometheus@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996'
+MIMIR_IMAGE='grafana/mimir@sha256:0ed56db7d7713707eff00224ddd4c3096afa6cf1cbe43a6f9391c537f1416099'
 ALLOY_IMAGE='grafana/alloy@sha256:6616111d70b3c75d5aa177e0584a523403eaba0eb3b177cb387302c2206d5221'
 
 finish() {
-  docker rm -f "${PREFIX}-alloy" "${PREFIX}-prometheus" "${PREFIX}-metrics" >/dev/null 2>&1 || true
+  docker rm -f "${PREFIX}-alloy" "${PREFIX}-mimir" "${PREFIX}-metrics" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
@@ -29,23 +29,43 @@ trap finish EXIT
 
 cp "$FIXTURE_DIR/input.prom" "$WORK/input.prom"
 sed -e 's|__TARGET__|metrics:8000|g' \
-  -e 's|__REMOTE_WRITE_URL__|http://prometheus:9090/api/v1/write|g' \
+  -e 's|__REMOTE_WRITE_URL__|http://mimir:9090/api/v1/push|g' \
   "$FIXTURE_DIR/config.river" > "$WORK/config.river"
-printf 'global: {}\nscrape_configs: []\n' > "$WORK/prometheus.yml"
+cat > "$WORK/mimir.yaml" <<'EOF'
+multitenancy_enabled: false
+ingester:
+  ring:
+    replication_factor: 1
+server:
+  http_listen_port: 9090
+  log_level: warn
+common:
+  storage:
+    backend: filesystem
+    filesystem:
+      dir: /tmp/mimir
+blocks_storage:
+  backend: filesystem
+  filesystem:
+    dir: /tmp/mimir/blocks
+  bucket_store:
+    sync_dir: /tmp/mimir/tsdb-sync
+  tsdb:
+    dir: /tmp/mimir/tsdb
+EOF
 
 docker network create "$NETWORK" >/dev/null
 docker create --name "${PREFIX}-metrics" --network "$NETWORK" --network-alias metrics \
   "$PYTHON_IMAGE" python -m http.server 8000 --directory /tmp >/dev/null
 docker cp "$WORK/input.prom" "${PREFIX}-metrics:/tmp/input.prom"
 docker start "${PREFIX}-metrics" >/dev/null
-docker create --name "${PREFIX}-prometheus" --network "$NETWORK" --network-alias prometheus \
+docker create --name "${PREFIX}-mimir" --network "$NETWORK" --network-alias mimir \
   --publish 127.0.0.1::9090 \
-  "$PROMETHEUS_IMAGE" --config.file=/tmp/prometheus.yml \
-  --web.enable-remote-write-receiver --storage.tsdb.path=/tmp/prometheus >/dev/null
-docker cp "$WORK/prometheus.yml" "${PREFIX}-prometheus:/tmp/prometheus.yml"
-docker start "${PREFIX}-prometheus" >/dev/null
-PROMETHEUS_PORT=$(docker port "${PREFIX}-prometheus" 9090/tcp | head -1 | awk -F: '{print $NF}')
-[[ "$PROMETHEUS_PORT" =~ ^[0-9]+$ ]]
+  "$MIMIR_IMAGE" -config.file=/tmp/mimir.yaml >/dev/null
+docker cp "$WORK/mimir.yaml" "${PREFIX}-mimir:/tmp/mimir.yaml"
+docker start "${PREFIX}-mimir" >/dev/null
+MIMIR_PORT=$(docker port "${PREFIX}-mimir" 9090/tcp | head -1 | awk -F: '{print $NF}')
+[[ "$MIMIR_PORT" =~ ^[0-9]+$ ]]
 docker create --name "${PREFIX}-alloy" --network "$NETWORK" \
   "$ALLOY_IMAGE" run --stability.level generally-available \
   --feature.community-components.enabled=false /tmp/config.river >/dev/null
@@ -53,8 +73,8 @@ docker cp "$WORK/config.river" "${PREFIX}-alloy:/tmp/config.river"
 docker start "${PREFIX}-alloy" >/dev/null
 
 ACTUAL_METRIC=""
-for _ in $(seq 1 60); do
-  RESPONSE=$(curl -fsS --get --data-urlencode 'query=up' "http://127.0.0.1:${PROMETHEUS_PORT}/api/v1/query" 2>/dev/null || true)
+for _ in $(seq 1 90); do
+  RESPONSE=$(curl -fsS --get --data-urlencode 'query=up' "http://127.0.0.1:${MIMIR_PORT}/prometheus/api/v1/query" 2>/dev/null || true)
   if [[ -n "$RESPONSE" ]] && jq -e '.status == "success" and .data.resultType == "vector" and (.data.result | length) == 1' >/dev/null 2>&1 <<<"$RESPONSE"; then
     ACTUAL_METRIC=$(jq -c '.data.result[0].metric' <<<"$RESPONSE")
     break
@@ -64,9 +84,19 @@ for _ in $(seq 1 60); do
     echo "Alloy exited before producing the expected series" >&2
     exit 1
   fi
+  if [[ "$(docker inspect -f '{{.State.Running}}' "${PREFIX}-mimir" 2>/dev/null || true)" != true ]]; then
+    docker logs "${PREFIX}-mimir" >&2 || true
+    echo "Mimir exited before receiving the expected series" >&2
+    exit 1
+  fi
   sleep 1
 done
-[[ -n "$ACTUAL_METRIC" ]] || { echo "post-Alloy series did not arrive" >&2; exit 1; }
+if [[ -z "$ACTUAL_METRIC" ]]; then
+  docker logs "${PREFIX}-alloy" >&2 || true
+  docker logs "${PREFIX}-mimir" >&2 || true
+  echo "post-Alloy series did not arrive" >&2
+  exit 1
+fi
 
 ACTUAL="$WORK/expected-central-series.json"
 jq -n --argjson labels "$ACTUAL_METRIC" '{
@@ -106,4 +136,4 @@ HIROBA_PYTHON=${HIROBA_PYTHON:-python3}
   --output "$WORK/central.test.yaml"
 promtool test rules "$WORK/central.test.yaml"
 
-echo "real Alloy fixture and promtool central/local logic: OK"
+echo "real Alloy to Mimir fixture and promtool central/local logic: OK"

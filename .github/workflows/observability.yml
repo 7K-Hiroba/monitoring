@@ -3,5 +3,5 @@ on: {pull_request: {branches: [main]}}
 permissions: {contents: read}
 jobs:
   test:
-    uses: 7K-Hiroba/workflows/.github/workflows/test-observability.yml@65ed5e9404b187877e97f71ff8a7374a69cd5097 # v1.1.0
+    uses: 7K-Hiroba/workflows/.github/workflows/test-observability.yml@a2facca81055096a0a12893e0fc11cb082c38183 # v1.1.0
     with: {root: .}

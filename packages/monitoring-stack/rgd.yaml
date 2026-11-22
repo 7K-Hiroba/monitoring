@@ -15,17 +15,21 @@ spec:
       argocdNamespace: string | default="argocd"
       project: string | default="default"
       topology: string | default="central"
+      org: string | required=true
       chartVersion: string | required=true
       chartDigest: string | required=true
       remoteWriteUrl: string | default=""
       lokiPushUrl: string | default=""
       controlPlaneTargets: string | default=""
       ephemeralObjectStorage: boolean | default=false
+      lokiS3Endpoint: string | default=""
+      lokiS3Region: string | default=""
+      lokiChunksBucket: string | default="loki-chunks"
+      lokiRulerBucket: string | default="loki-ruler"
+      lokiCredentialsSecret: string | default=""
+      lokiS3ForcePathStyle: boolean | default=false
     status:
       ready: ${has(application.status.health.status) && application.status.health.status == "Healthy" && has(application.status.sync.status) && application.status.sync.status == "Synced"}
-      chartVersion: ${schema.spec.chartVersion}
-      chartDigest: ${schema.spec.chartDigest}
-      topology: ${schema.spec.topology}
   resources:
     - id: application
       template:
@@ -48,7 +52,7 @@ spec:
           source:
             repoURL: ghcr.io/7k-hiroba/monitoring/charts
             chart: monitoring
-            targetRevision: ${schema.spec.chartDigest}
+            targetRevision: ${schema.spec.chartVersion}
             helm:
               releaseName: ${schema.spec.name}
               valueFiles: []
@@ -65,6 +69,7 @@ spec:
                 global:
                   topology: ${schema.spec.topology}
                   telemetry:
+                    org: ${schema.spec.org}
                     remoteWriteUrl: ${schema.spec.remoteWriteUrl}
                     lokiPushUrl: ${schema.spec.lokiPushUrl}
                   collectors:
@@ -77,9 +82,29 @@ spec:
                   minio:
                     enabled: ${schema.spec.ephemeralObjectStorage}
                 loki:
+                  loki:
+                    schemaConfig:
+                      configs:
+                        - from: "2026-01-01"
+                          store: tsdb
+                          object_store: '${schema.spec.ephemeralObjectStorage ? "filesystem" : "s3"}'
+                          schema: v13
+                          index:
+                            prefix: index_
+                            period: 24h
+                    storage:
+                      type: '${schema.spec.ephemeralObjectStorage ? "filesystem" : "s3"}'
+                      bucketNames:
+                        chunks: ${schema.spec.lokiChunksBucket}
+                        ruler: ${schema.spec.lokiRulerBucket}
+                      s3:
+                        endpoint: ${schema.spec.lokiS3Endpoint}
+                        region: ${schema.spec.lokiS3Region}
+                        s3ForcePathStyle: ${schema.spec.lokiS3ForcePathStyle}
                   singleBinary:
                     persistence:
-                      enabled: false
+                      enabled: ${!schema.spec.ephemeralObjectStorage}
+                    extraEnvFrom: '${schema.spec.lokiCredentialsSecret == "" ? [] : [{"secretRef": {"name": schema.spec.lokiCredentialsSecret}}]}'
           syncPolicy:
             automated: {}
             syncOptions:

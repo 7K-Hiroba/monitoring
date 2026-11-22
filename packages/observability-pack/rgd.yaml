@@ -59,16 +59,17 @@ spec:
           \        \"unit\": \"short\"\n        }\n      },\n      \"gridPos\": {\n\
           \        \"h\": 8,\n        \"w\": 24,\n        \"x\": 0,\n        \"y\"\
           : 0\n      },\n      \"id\": 1,\n      \"targets\": [\n        {\n     \
-          \     \"expr\": \"sum by (job, cluster) (up)\",\n          \"refId\": \"\
-          A\"\n        }\n      ],\n      \"title\": \"Observability target availability\"\
-          ,\n      \"type\": \"timeseries\"\n    }\n  ],\n  \"schemaVersion\": 40,\n\
-          \  \"templating\": {\n    \"list\": [\n      {\n        \"name\": \"namespace\"\
-          ,\n        \"type\": \"textbox\",\n        \"value\": \"monitoring\"\n \
-          \     },\n      {\n        \"current\": {\n          \"text\": \"Mimir\"\
-          ,\n          \"value\": \"mimir\"\n        },\n        \"name\": \"DS_PROMETHEUS\"\
-          ,\n        \"query\": \"prometheus\",\n        \"type\": \"datasource\"\n\
-          \      }\n    ]\n  },\n  \"title\": \"Monitoring stack overview\",\n  \"\
-          uid\": \"monitoring-overview\"\n}\n"
+          \     \"expr\": \"sum by (org, cluster, job, instance) (up{org=~\\\".+\\\
+          \", cluster=~\\\".+\\\", job=~\\\".+\\\", instance=~\\\".+\\\"})\",\n  \
+          \        \"refId\": \"A\"\n        }\n      ],\n      \"title\": \"Observability\
+          \ target availability\",\n      \"type\": \"timeseries\"\n    }\n  ],\n\
+          \  \"schemaVersion\": 40,\n  \"templating\": {\n    \"list\": [\n      {\n\
+          \        \"name\": \"namespace\",\n        \"type\": \"textbox\",\n    \
+          \    \"value\": \"monitoring\"\n      },\n      {\n        \"current\":\
+          \ {\n          \"text\": \"Mimir\",\n          \"value\": \"mimir\"\n  \
+          \      },\n        \"name\": \"DS_PROMETHEUS\",\n        \"query\": \"prometheus\"\
+          ,\n        \"type\": \"datasource\"\n      }\n    ]\n  },\n  \"title\":\
+          \ \"Monitoring stack overview\",\n  \"uid\": \"monitoring-overview\"\n}\n"
     includeWhen:
     - ${schema.spec.render == "all" || schema.spec.render == "dashboards"}
   - id: rulesCentral
@@ -84,9 +85,9 @@ spec:
           interval: 1m
           rules:
           - record: monitoring:up:sum
-            expr: sum(up)
+            expr: sum(up{org=~".+", cluster=~".+", job=~".+", instance=~".+"})
           - alert: MonitoringTargetDown
-            expr: up == 0
+            expr: up{org=~".+", cluster=~".+", job=~".+", instance=~".+"} == 0
             for: 5m
             labels:
               severity: critical
@@ -108,10 +109,11 @@ spec:
           inari.dev/rule-evaluation: central
       data:
         central.yaml: "groups:\n- name: monitoring-central\n  interval: 1m\n  rules:\n\
-          \  - record: monitoring:up:sum\n    expr: sum(up)\n  - alert: MonitoringTargetDown\n\
-          \    expr: up == 0\n    for: 5m\n    labels:\n      severity: critical\n\
-          \      app: monitoring\n    annotations:\n      summary: Monitoring target\
-          \ is down\n"
+          \  - record: monitoring:up:sum\n    expr: sum(up{org=~\".+\", cluster=~\"\
+          .+\", job=~\".+\", instance=~\".+\"})\n  - alert: MonitoringTargetDown\n\
+          \    expr: up{org=~\".+\", cluster=~\".+\", job=~\".+\", instance=~\".+\"\
+          } == 0\n    for: 5m\n    labels:\n      severity: critical\n      app: monitoring\n\
+          \    annotations:\n      summary: Monitoring target is down\n"
     includeWhen:
     - ${(schema.spec.render == "all" || schema.spec.render == "rules-central") &&
       schema.spec.rulesCentral}
@@ -128,7 +130,8 @@ spec:
           interval: 1m
           rules:
           - alert: MonitoringClientDown
-            expr: up{job=~"alloy|kube-state-metrics|node-exporter"} == 0
+            expr: up{org=~".+", cluster=~".+", job=~"alloy|kube-state-metrics|node-exporter",
+              instance=~".+"} == 0
             for: 5m
             labels:
               severity: critical
@@ -149,8 +152,10 @@ spec:
           inari.dev/rule-evaluation: local
       data:
         local.yaml: "groups:\n- name: monitoring-client\n  interval: 1m\n  rules:\n\
-          \  - alert: MonitoringClientDown\n    expr: up{job=~\"alloy|kube-state-metrics|node-exporter\"\
-          } == 0\n    for: 5m\n    labels:\n      severity: critical\n      app: monitoring\n\
-          \    annotations:\n      summary: Client telemetry collector is down\n"
+          \  - alert: MonitoringClientDown\n    expr: up{org=~\".+\", cluster=~\"\
+          .+\", job=~\"alloy|kube-state-metrics|node-exporter\",\n      instance=~\"\
+          .+\"} == 0\n    for: 5m\n    labels:\n      severity: critical\n      app:\
+          \ monitoring\n    annotations:\n      summary: Client telemetry collector\
+          \ is down\n"
     includeWhen:
     - ${(schema.spec.render == "all" || schema.spec.render == "rules-local") && schema.spec.rulesLocal}

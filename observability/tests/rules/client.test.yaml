@@ -4,7 +4,7 @@ rule_files:
 tests:
   - interval: 1m
     input_series:
-      - series: 'up{job="alloy"}'
+      - series: 'up{org="acme",cluster="local",job="alloy",instance="alloy-0"}'
         values: '1 1 1 1 0 0 0 0 0 0 0'
     alert_rule_test:
       - eval_time: 10m
@@ -13,7 +13,10 @@ tests:
           - exp_labels:
               alertname: MonitoringClientDown
               app: monitoring
+              cluster: local
+              instance: alloy-0
               job: alloy
+              org: acme
               severity: critical
             exp_annotations:
               summary: Client telemetry collector is down

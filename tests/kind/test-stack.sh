@@ -26,6 +26,8 @@ kind create cluster --name "$CLUSTER" --image "$KIND_IMAGE" --wait 120s
 helm upgrade --install kro oci://registry.k8s.io/kro/charts/kro \
   --namespace kro-system --create-namespace --version 0.6.1 --wait --timeout 180s
 kubectl apply -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_COMMIT}/manifests/crds/application-crd.yaml"
+kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=60s
+kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f "$ROOT/packages/monitoring-stack/rgd.yaml"
 kubectl wait --for=condition=Ready rgd/monitoring-stack --timeout=120s
 kubectl apply -f "$ROOT/packages/monitoring-stack/tests/central.yaml" \
