@@ -18,7 +18,7 @@ data:
         access: proxy
         isDefault: true
         editable: false
-        url: http://{{ .Release.Name }}-mimir-gateway.{{ .Release.Namespace }}.svc:80
+        url: http://{{ .Release.Name }}-mimir-gateway.{{ .Release.Namespace }}.svc:80/prometheus
         jsonData:
           prometheusType: Mimir
       {{- end }}

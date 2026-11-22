@@ -195,7 +195,8 @@ spec:
                 try:
                     checks = verify(context, os.environ.get("GRAFANA_TOKEN", ""))
                     finish(context, "passed", checks)
-                except Exception:
+                except Exception as error:
+                    print(f"readiness verification failed: {type(error).__name__}: {error}", file=sys.stderr)
                     finish(context, "failed", {})
 
             if __name__ == "__main__":

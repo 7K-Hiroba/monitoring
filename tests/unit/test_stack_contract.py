@@ -107,6 +107,10 @@ class StackContractTests(unittest.TestCase):
         package_schema = self.load("packages/monitoring-stack/values.schema.json")
         self.assertIn("org", package_schema["required"])
 
+    def test_grafana_mimir_datasource_includes_prometheus_api_base(self):
+        template = (ROOT / "charts/monitoring/templates/datasources.yaml").read_text()
+        self.assertIn("mimir-gateway.{{ .Release.Namespace }}.svc:80/prometheus", template)
+
     def test_component_scrapes_follow_component_gates_and_label_pipeline(self):
         content = self.load("charts/monitoring/values.yaml")["alloy"]["alloy"]["configMap"]["content"]
         for component in ("mimir", "grafana", "loki", "alloy"):

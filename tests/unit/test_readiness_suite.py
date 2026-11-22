@@ -73,6 +73,9 @@ class ReadinessSuiteTests(unittest.TestCase):
         self.assertIn('"/api/v1/query?" + urllib.parse.urlencode', container["args"][0])
         self.assertNotIn('urllib.request.urlopen', container["args"][0])
         self.assertNotIn('/api/v1/query?query=" + urllib.parse', container["args"][0])
+        self.assertIn("except Exception as error:", container["args"][0])
+        self.assertIn("readiness verification failed", container["args"][0])
+        self.assertIn("file=sys.stderr", container["args"][0])
 
     def test_ci_context_is_explicit_local_and_fully_bound(self):
         context = json.loads((ROOT / "tests/smoke/fixtures/ci-context.json").read_text())
