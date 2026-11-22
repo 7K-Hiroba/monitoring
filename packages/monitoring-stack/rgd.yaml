@@ -56,9 +56,8 @@ spec:
             server: https://kubernetes.default.svc
             namespace: ${schema.spec.namespace}
           source:
-            repoURL: ghcr.io/7k-hiroba/monitoring/charts
-            chart: monitoring
-            targetRevision: ${schema.spec.chartVersion}
+            repoURL: oci://ghcr.io/7k-hiroba/monitoring/charts/monitoring
+            targetRevision: ${schema.spec.chartDigest}
             helm:
               releaseName: ${schema.spec.name}
               valueFiles: []

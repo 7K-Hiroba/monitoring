@@ -1,6 +1,6 @@
 # Readiness contract
 
-The monitoring suite verifies the folder, every declared dashboard and panel query, the selected datasource, and each selected Mimir rule group against an existing companion. Optional Loki label health proves log-query connectivity. It produces folder/dashboard/datasource/rule evidence only; there is no access-readiness field or identity/ACL claim.
+The monitoring suite verifies the folder, every declared dashboard and panel query, each panel's resolved datasource against the selected UID, and each selected Mimir rule group against an existing companion. Rule evidence requires a successful query, healthy rule state, and no evaluation error. Optional Loki label health proves log-query connectivity. It produces folder/dashboard/datasource/rule evidence only; there is no access-readiness field or identity/ACL claim.
 
 The result binds companion ID/generation, target ID/revision/cluster, plan and app instance/revision/digest, pack item/version/digest, capability digest, suite digest and actual generic `ci`/`stage`/`prod` profile, run ID/attempt/finish time, and expiry. The generic verifier authenticates the existing outbound agent stream and checks its run, environment grant, policy, and target before calling the deployment-plan consumer. The consumer repeats the subject-specific checks and applies the existing readiness state machine.
 

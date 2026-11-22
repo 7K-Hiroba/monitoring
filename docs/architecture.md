@@ -14,7 +14,7 @@ Alertmanager runs as the pinned Mimir chart's managed component. Loki provides l
 
 ## Packaging and deployment
 
-`packages/monitoring-stack/rgd.yaml` creates an ArgoCD Application for the fixed signed `monitoring` OCI chart at an exact version/digest. KRO reports status from the actual Application. `observability/` is canonical for dashboards/rules; the pinned workflow generator produces chart and `observability-pack` outputs with fail-on-diff. Rule ConfigMaps use Mimir's filesystem ruler path; no API writer, puller, PR bot, or raw observability OCI bundle exists.
+`packages/monitoring-stack/rgd.yaml` creates an ArgoCD Application for the fixed signed `monitoring` OCI chart. The source `targetRevision` is the exact OCI digest; the compatible chart version is retained as immutable evidence rather than used as a mutable deployment selector. KRO reports status from the actual Application. `observability/` is canonical for dashboards/rules; the pinned workflow generator produces chart and `observability-pack` outputs with fail-on-diff. Rule ConfigMaps use Mimir's filesystem ruler path; no API writer, puller, PR bot, or raw observability OCI bundle exists.
 
 Inari-managed charts disable chart-native observability when using a companion. Existing catalog admission, resource-target resolver, DeploymentPlan, source-agnostic renderer, and generic verification services own their respective seams. No component in this repository implements a replacement renderer or hub-originated Grafana call.
 

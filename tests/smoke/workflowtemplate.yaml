@@ -77,52 +77,128 @@ spec:
                 if result != "passed":
                     sys.exit(1)
 
-            context = json.loads(os.environ["OBSERVABILITY_INPUT"])
-            ALLOW_PLAINTEXT = context["suite"]["profile"] == "ci"
-            checks = {}
-            try:
-                token = os.environ.get("GRAFANA_TOKEN", "")
+            def require_success(payload, description):
+                if not isinstance(payload, dict) or payload.get("status") != "success":
+                    raise ValueError(description + " did not return a successful result")
+
+            def iter_panels(panels):
+                for panel in panels:
+                    if not isinstance(panel, dict):
+                        raise ValueError("invalid dashboard panel")
+                    yield panel
+                    nested = panel.get("panels", [])
+                    if nested:
+                        yield from iter_panels(nested)
+
+            def resolve_datasource_uid(reference, variables, datasources):
+                if reference is None:
+                    defaults = [item for item in datasources if item.get("isDefault") is True]
+                    if len(defaults) != 1:
+                        raise ValueError("panel requires exactly one default datasource")
+                    return defaults[0].get("uid", "")
+                if isinstance(reference, dict):
+                    value = reference.get("uid", "")
+                elif isinstance(reference, str):
+                    value = reference
+                else:
+                    raise ValueError("invalid panel datasource")
+                variable_name = ""
+                if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
+                    variable_name = value[2:-1]
+                elif isinstance(value, str) and value.startswith("$"):
+                    variable_name = value[1:]
+                if variable_name:
+                    variable = variables.get(variable_name)
+                    if not isinstance(variable, dict) or variable.get("type") != "datasource":
+                        raise ValueError("unknown panel datasource variable")
+                    value = variable.get("current", {}).get("value", "")
+                    if isinstance(value, list):
+                        if len(value) != 1:
+                            raise ValueError("panel datasource variable must resolve to one value")
+                        value = value[0]
+                if not isinstance(value, str) or not value:
+                    raise ValueError("panel datasource is unresolved")
+                matches = [item for item in datasources if value in (item.get("uid"), item.get("name"))]
+                if len(matches) != 1:
+                    raise ValueError("panel datasource is ambiguous or missing")
+                return matches[0].get("uid", "")
+
+            def verify(context, token):
                 grafana = context["grafanaBaseUrl"]
                 metrics = context["metricsBaseUrl"]
                 logs = context.get("logsBaseUrl", "")
+                checks = {}
                 folders = get(grafana, "/api/folders", token)
                 folder = next(item for item in folders if item.get("title") == context["folder"])
                 checks["folder"] = {"state": "passed", "name": context["folder"], "uid": folder["uid"]}
+
+                datasources = get(grafana, "/api/datasources", token)
+                checks["datasources"] = []
+                for declared in context["datasources"]:
+                    matches = [item for item in datasources if item.get("name") == declared["name"]]
+                    if len(matches) != 1:
+                        raise ValueError("selected datasource is ambiguous or missing")
+                    datasource = matches[0]
+                    if datasource.get("type") != declared["type"] or datasource.get("uid") != context["datasource"]:
+                        raise ValueError("datasource identity or type mismatch")
+                    checks["datasources"].append({"state": "passed", "logical": declared["logical"], "name": declared["name"], "type": declared["type"]})
+
                 checks["dashboards"] = []
                 for declared in context["dashboards"]:
                     document = get(grafana, "/api/dashboards/uid/" + declared["uid"], token)
                     dashboard = document["dashboard"]
                     if dashboard["title"] != declared["title"] or document["meta"].get("folderUid") != folder["uid"]:
                         raise ValueError("dashboard mismatch")
-                    for panel in dashboard.get("panels", []):
+                    variables = {
+                        item.get("name"): item
+                        for item in dashboard.get("templating", {}).get("list", [])
+                        if isinstance(item, dict) and item.get("name")
+                    }
+                    for panel in iter_panels(dashboard.get("panels", [])):
                         for target in panel.get("targets", []):
                             expression = target.get("expr", "")
-                            if expression:
-                                get(grafana, "/api/datasources/proxy/uid/" + context["datasource"] + "/api/v1/query?" + urllib.parse.urlencode({"query": expression}), token)
+                            if not expression:
+                                continue
+                            reference = target.get("datasource")
+                            if reference is None:
+                                reference = panel.get("datasource")
+                            if resolve_datasource_uid(reference, variables, datasources) != context["datasource"]:
+                                raise ValueError("panel datasource is outside the approved selection")
+                            query = get(grafana, "/api/datasources/proxy/uid/" + context["datasource"] + "/api/v1/query?" + urllib.parse.urlencode({"query": expression}), token)
+                            require_success(query, "panel query")
                     slug = document["meta"].get("url", "").rstrip("/").split("/")[-1]
                     if not slug:
                         raise ValueError("dashboard slug missing")
                     checks["dashboards"].append({"state": "passed", "uid": declared["uid"], "title": declared["title"], "slug": slug})
-                datasources = get(grafana, "/api/datasources", token)
-                checks["datasources"] = []
-                for declared in context["datasources"]:
-                    datasource = next(item for item in datasources if item.get("name") == declared["name"])
-                    if datasource.get("type") != declared["type"]:
-                        raise ValueError("datasource type mismatch")
-                    checks["datasources"].append({"state": "passed", "logical": declared["logical"], "name": declared["name"], "type": declared["type"]})
+
                 rules_response = get(metrics, "/prometheus/api/v1/rules")
+                require_success(rules_response, "rule query")
                 groups = rules_response.get("data", {}).get("groups", [])
                 checks["rules"] = []
                 for declared in context["ruleGroups"]:
                     group = next(item for item in groups if item.get("name") == declared["group"])
                     if not group.get("lastEvaluation") or not group.get("rules"):
                         raise ValueError("rule group has not evaluated")
+                    for rule in group["rules"]:
+                        if rule.get("health") != "ok" or rule.get("lastError"):
+                            raise ValueError("rule evaluation failed")
                     checks["rules"].append({"state": "passed", "file": declared["file"], "evaluation": declared["evaluation"]})
                 if logs:
-                    get(logs, "/loki/api/v1/labels")
-                finish(context, "passed", checks)
-            except Exception:
-                finish(context, "failed", {})
+                    require_success(get(logs, "/loki/api/v1/labels"), "Loki label query")
+                return checks
+
+            def main():
+                global ALLOW_PLAINTEXT
+                context = json.loads(os.environ["OBSERVABILITY_INPUT"])
+                ALLOW_PLAINTEXT = context["suite"]["profile"] == "ci"
+                try:
+                    checks = verify(context, os.environ.get("GRAFANA_TOKEN", ""))
+                    finish(context, "passed", checks)
+                except Exception:
+                    finish(context, "failed", {})
+
+            if __name__ == "__main__":
+                main()
         env:
           - name: OBSERVABILITY_INPUT
             value: "{{inputs.parameters.context}}"

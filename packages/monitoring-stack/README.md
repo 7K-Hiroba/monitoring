@@ -1,6 +1,6 @@
 # monitoring-stack
 
-KRO-managed full Kubernetes observability stack. The RGD creates an ArgoCD `Application` for the signed `monitoring` chart from the fixed `ghcr.io/7k-hiroba/monitoring/charts` repository. Every instance requires an exact chart version and SHA-256 OCI digest; no channel or mutable tag is accepted.
+KRO-managed full Kubernetes observability stack. The RGD creates an ArgoCD `Application` for the signed `monitoring` chart from the fixed `oci://ghcr.io/7k-hiroba/monitoring/charts/monitoring` repository. Every instance requires an exact chart version and SHA-256 OCI digest; the digest is the source `targetRevision`, so no channel or mutable tag is resolved.
 
 ## Topology
 

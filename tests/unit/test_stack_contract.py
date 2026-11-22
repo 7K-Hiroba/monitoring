@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import importlib.util
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -60,9 +62,10 @@ class StackContractTests(unittest.TestCase):
         application = rgd["spec"]["resources"][0]["template"]
         self.assertEqual("Application", application["kind"])
         source = application["spec"]["source"]
-        self.assertEqual("ghcr.io/7k-hiroba/monitoring/charts", source["repoURL"])
-        self.assertEqual("monitoring", source["chart"])
-        self.assertEqual("${schema.spec.chartVersion}", source["targetRevision"])
+        self.assertEqual("oci://ghcr.io/7k-hiroba/monitoring/charts/monitoring", source["repoURL"])
+        self.assertNotIn("chart", source)
+        self.assertEqual("${schema.spec.chartDigest}", source["targetRevision"])
+        self.assertEqual("${schema.spec.chartVersion}", application["metadata"]["annotations"]["inari.dev/chart-version"])
         self.assertEqual("${schema.spec.chartDigest}", application["metadata"]["annotations"]["inari.dev/chart-digest"])
         rendered = yaml.dump(rgd)
         self.assertNotIn("kube-prometheus-stack", rendered)
@@ -158,6 +161,42 @@ class StackContractTests(unittest.TestCase):
                 self.assertIn("kubectl create namespace argocd", text)
                 self.assertIn("kubectl wait --for=condition=Established crd/applications.argoproj.io", text)
                 self.assertLess(text.index("crd/applications.argoproj.io"), text.index("rgd.yaml"))
+
+    def test_kind_local_renderer_binds_real_digest_and_all_topologies(self):
+        spec = importlib.util.spec_from_file_location("monitoring_kind_render_local", ROOT / "tests/kind/render-local.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        digest = "sha256:" + "0" * 64
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            module.render(ROOT, work, "registry.registry.svc:5000", digest, "192.0.2.10:6443")
+            rgd = self.load((work / "rgd.yaml").as_posix())
+            source = rgd["spec"]["resources"][0]["template"]["spec"]["source"]
+            self.assertEqual("oci://registry.registry.svc:5000/charts/monitoring", source["repoURL"])
+            self.assertEqual("${schema.spec.chartDigest}", source["targetRevision"])
+            values = source["helm"]["valuesObject"]
+            self.assertTrue(values["global"]["collectors"]["kubelet"]["insecureSkipVerify"])
+            self.assertTrue(values["global"]["collectors"]["controlPlane"]["insecureSkipVerify"])
+            for topology in ("central", "local", "client"):
+                fixture = self.load((work / f"{topology}.yaml").as_posix())["spec"]
+                self.assertEqual(digest, fixture["chartDigest"])
+                self.assertEqual("192.0.2.10:6443", fixture["controlPlaneTargets"])
+                self.assertEqual("monitoring" if topology == "central" else f"monitoring-{topology}", fixture["namespace"])
+            client = self.load((work / "client.yaml").as_posix())["spec"]
+            self.assertEqual("http://monitoring-mimir-gateway.monitoring.svc:80/api/v1/push", client["remoteWriteUrl"])
+            self.assertEqual("http://monitoring-loki-gateway.monitoring.svc:80/loki/api/v1/push", client["lokiPushUrl"])
+        canonical = self.load("packages/monitoring-stack/rgd.yaml")
+        self.assertEqual("oci://ghcr.io/7k-hiroba/monitoring/charts/monitoring", canonical["spec"]["resources"][0]["template"]["spec"]["source"]["repoURL"])
+
+    def test_kind_suite_executes_argocd_and_client_stack(self):
+        text = (ROOT / "tests/kind/test-stack.sh").read_text()
+        self.assertIn("manifests/core-install.yaml", text)
+        self.assertIn("wait_for_application \"$app\"", text)
+        self.assertIn('test "$(kubectl get application "$app"', text)
+        self.assertIn("deployment/monitoring-client-kube-state-metrics", text)
+        self.assertIn("daemonset/monitoring-client-alloy", text)
+        self.assertIn('query=up{cluster="monitoring-client"}', text)
+        self.assertNotIn('helm upgrade --install "$release"', text)
 
     def test_workflow_callers_use_the_approved_immutable_release(self):
         for path in (ROOT / ".github/workflows").glob("*.yml"):
