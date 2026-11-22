@@ -38,6 +38,23 @@ class ReadinessSuiteTests(unittest.TestCase):
             self.assertNotIn(forbidden, text)
         compile(container["args"][0], "inline-observability-verifier", "exec")
         self.assertIn('method="GET"', container["args"][0])
+        self.assertIn("RejectRedirects", container["args"][0])
+        self.assertIn('parsed.scheme != "https" and not ALLOW_PLAINTEXT', container["args"][0])
+        self.assertIn('"/api/v1/query?" + urllib.parse.urlencode', container["args"][0])
+        self.assertNotIn('urllib.request.urlopen', container["args"][0])
+        self.assertNotIn('/api/v1/query?query=" + urllib.parse', container["args"][0])
+
+    def test_ci_context_is_explicit_local_and_fully_bound(self):
+        context = json.loads((ROOT / "tests/smoke/fixtures/ci-context.json").read_text())
+        self.assertEqual(self.suite["target"]["adapter"]["ciContext"], "fixtures/ci-context.json")
+        self.assertEqual("ci", context["suite"]["profile"])
+        self.assertEqual("ci-run", context["run"]["id"])
+        self.assertEqual("monitoring-overview", context["dashboards"][0]["uid"])
+        self.assertEqual(2, len(context["ruleGroups"]))
+        for key in ("grafanaBaseUrl", "metricsBaseUrl", "logsBaseUrl"):
+            self.assertTrue(context[key].startswith("http://monitoring-"))
+            self.assertTrue(context[key].endswith(".default.svc"))
+        self.assertNotIn("token", json.dumps(context).lower())
 
     def test_result_fixtures_use_generic_profiles_and_no_access_claim(self):
         for name in ("central", "local"):

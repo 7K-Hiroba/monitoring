@@ -5,10 +5,11 @@ target:
   component: charts/monitoring
   adapter:
     kind: helm
+    ciContext: fixtures/ci-context.json
     readiness:
       - kind: Deployment
         name: monitoring-grafana
-        namespace: monitoring
+        namespace: default
         condition: Available
 compatibleAppVersions: ">=0.1.0 <2.0.0"
 parameterContract: inari.observability.params.v1

@@ -38,14 +38,27 @@ spec:
             import urllib.parse
             import urllib.request
 
+            ALLOW_PLAINTEXT = False
+
+            class RejectRedirects(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, request, fp, code, msg, headers, newurl):
+                    return None
+
+            OPENER = urllib.request.build_opener(RejectRedirects)
+
             def get(base, path, token=""):
-                if not isinstance(base, str) or not base.startswith(("https://", "http://")):
+                if not isinstance(base, str):
                     raise ValueError("invalid endpoint")
+                parsed = urllib.parse.urlsplit(base)
+                if parsed.scheme not in ("https", "http") or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+                    raise ValueError("invalid endpoint")
+                if parsed.scheme != "https" and not ALLOW_PLAINTEXT:
+                    raise ValueError("plaintext endpoints are permitted only in ci")
                 headers = {"Accept": "application/json"}
                 if token:
                     headers["Authorization"] = "Bearer " + token
                 request = urllib.request.Request(base.rstrip("/") + path, headers=headers, method="GET")
-                with urllib.request.urlopen(request, timeout=15) as response:
+                with OPENER.open(request, timeout=15) as response:
                     if response.status != 200:
                         raise ValueError("readiness endpoint failed")
                     return json.load(response)
@@ -65,6 +78,7 @@ spec:
                     sys.exit(1)
 
             context = json.loads(os.environ["OBSERVABILITY_INPUT"])
+            ALLOW_PLAINTEXT = context["suite"]["profile"] == "ci"
             checks = {}
             try:
                 token = os.environ.get("GRAFANA_TOKEN", "")
@@ -84,7 +98,7 @@ spec:
                         for target in panel.get("targets", []):
                             expression = target.get("expr", "")
                             if expression:
-                                get(grafana, "/api/datasources/proxy/uid/" + context["datasource"] + "/api/v1/query?query=" + urllib.parse.urlencode({"query": expression}), token)
+                                get(grafana, "/api/datasources/proxy/uid/" + context["datasource"] + "/api/v1/query?" + urllib.parse.urlencode({"query": expression}), token)
                     slug = document["meta"].get("url", "").rstrip("/").split("/")[-1]
                     if not slug:
                         raise ValueError("dashboard slug missing")
