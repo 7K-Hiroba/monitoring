@@ -1,0 +1,26 @@
+suiteSchema: inari.smoke.v1
+target:
+  id: monitoring
+  version: 0.1.0
+  component: charts/monitoring
+  adapter:
+    kind: helm
+    readiness:
+      - kind: Deployment
+        name: monitoring-grafana
+        namespace: monitoring
+        condition: Available
+compatibleAppVersions: ">=0.1.0 <2.0.0"
+parameterContract: inari.observability.params.v1
+dependencies: []
+timeout: 10m
+executableProfiles: [ci, stage, prod]
+profiles:
+  ci: {sideEffects: readOnly, cleanup: required}
+  stage: {sideEffects: readOnly, cleanup: required}
+  prod: {sideEffects: readOnly, cleanup: required}
+rbacRequirements: []
+workflowTemplate: workflowtemplate.yaml
+entrypoint: verify
+idempotency: safe
+cleanup: no resources are created or modified by this read-only verification

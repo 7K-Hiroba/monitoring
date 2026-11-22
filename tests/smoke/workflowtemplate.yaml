@@ -1,0 +1,128 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: monitoring-observability-readiness
+  labels:
+    inari.dev/smoke-target: monitoring
+    inari.dev/suite-schema: inari.smoke.v1
+spec:
+  entrypoint: verify
+  activeDeadlineSeconds: 600
+  ttlStrategy:
+    secondsAfterCompletion: 3600
+    secondsAfterFailure: 3600
+  inputs:
+    parameters:
+      - name: context
+        description: Platform-rendered inari.observability.params.v1 context; endpoints and all identities are server/target-bound.
+  templates:
+    - name: verify
+      inputs:
+        parameters:
+          - name: context
+      outputs:
+        parameters:
+          - name: inari-verification-outcome
+            valueFrom: {path: /tmp/outcome.json}
+      container:
+        name: verify
+        image: python@sha256:7fbad8e4652eae0186429a6f26cf5b23e27e8c6fd7ac4d0cfd7a6988cdeea1e1
+        imagePullPolicy: IfNotPresent
+        command: [python, -c]
+        args:
+          - |
+            import datetime
+            import json
+            import os
+            import sys
+            import urllib.parse
+            import urllib.request
+
+            def get(base, path, token=""):
+                if not isinstance(base, str) or not base.startswith(("https://", "http://")):
+                    raise ValueError("invalid endpoint")
+                headers = {"Accept": "application/json"}
+                if token:
+                    headers["Authorization"] = "Bearer " + token
+                request = urllib.request.Request(base.rstrip("/") + path, headers=headers, method="GET")
+                with urllib.request.urlopen(request, timeout=15) as response:
+                    if response.status != 200:
+                        raise ValueError("readiness endpoint failed")
+                    return json.load(response)
+
+            def finish(context, result, checks):
+                now = datetime.datetime.now(datetime.timezone.utc)
+                context["run"]["finishedAt"] = now.isoformat().replace("+00:00", "Z")
+                context["expiresAt"] = (now + datetime.timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+                outcome = dict(context)
+                outcome["apiVersion"] = "inari.dev/v1alpha1"
+                outcome["kind"] = "ObservabilityVerificationResult"
+                outcome["result"] = result
+                outcome["checks"] = checks
+                with open("/tmp/outcome.json", "w") as output:
+                    json.dump(outcome, output, separators=(",", ":"), sort_keys=True)
+                if result != "passed":
+                    sys.exit(1)
+
+            context = json.loads(os.environ["OBSERVABILITY_INPUT"])
+            checks = {}
+            try:
+                token = os.environ.get("GRAFANA_TOKEN", "")
+                grafana = context["grafanaBaseUrl"]
+                metrics = context["metricsBaseUrl"]
+                logs = context.get("logsBaseUrl", "")
+                folders = get(grafana, "/api/folders", token)
+                folder = next(item for item in folders if item.get("title") == context["folder"])
+                checks["folder"] = {"state": "passed", "name": context["folder"], "uid": folder["uid"]}
+                checks["dashboards"] = []
+                for declared in context["dashboards"]:
+                    document = get(grafana, "/api/dashboards/uid/" + declared["uid"], token)
+                    dashboard = document["dashboard"]
+                    if dashboard["title"] != declared["title"] or document["meta"].get("folderUid") != folder["uid"]:
+                        raise ValueError("dashboard mismatch")
+                    for panel in dashboard.get("panels", []):
+                        for target in panel.get("targets", []):
+                            expression = target.get("expr", "")
+                            if expression:
+                                get(grafana, "/api/datasources/proxy/uid/" + context["datasource"] + "/api/v1/query?query=" + urllib.parse.urlencode({"query": expression}), token)
+                    slug = document["meta"].get("url", "").rstrip("/").split("/")[-1]
+                    if not slug:
+                        raise ValueError("dashboard slug missing")
+                    checks["dashboards"].append({"state": "passed", "uid": declared["uid"], "title": declared["title"], "slug": slug})
+                datasources = get(grafana, "/api/datasources", token)
+                checks["datasources"] = []
+                for declared in context["datasources"]:
+                    datasource = next(item for item in datasources if item.get("name") == declared["name"])
+                    if datasource.get("type") != declared["type"]:
+                        raise ValueError("datasource type mismatch")
+                    checks["datasources"].append({"state": "passed", "logical": declared["logical"], "name": declared["name"], "type": declared["type"]})
+                rules_response = get(metrics, "/prometheus/api/v1/rules")
+                groups = rules_response.get("data", {}).get("groups", [])
+                checks["rules"] = []
+                for declared in context["ruleGroups"]:
+                    group = next(item for item in groups if item.get("name") == declared["group"])
+                    if not group.get("lastEvaluation") or not group.get("rules"):
+                        raise ValueError("rule group has not evaluated")
+                    checks["rules"].append({"state": "passed", "file": declared["file"], "evaluation": declared["evaluation"]})
+                if logs:
+                    get(logs, "/loki/api/v1/labels")
+                finish(context, "passed", checks)
+            except Exception:
+                finish(context, "failed", {})
+        env:
+          - name: OBSERVABILITY_INPUT
+            value: "{{inputs.parameters.context}}"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+          seccompProfile: {type: RuntimeDefault}
+        volumeMounts:
+          - name: output
+            mountPath: /tmp
+      volumes:
+        - name: output
+          emptyDir: {}

@@ -1,0 +1,19 @@
+{
+  "apiVersion": "inari.dev/v1alpha1",
+  "kind": "ObservabilityVerificationResult",
+  "companion": {"id": "oc-local", "generation": 1},
+  "target": {"id": "rt-local", "revision": 1, "clusterId": "local-cluster"},
+  "app": {"planId": "dp-local", "instanceId": "app-local", "sourceDigest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "revision": "revision-1"},
+  "pack": {"itemId": "hiroba/observability-pack", "version": "0.1.0", "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},
+  "capabilityDigest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "suite": {"digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "profile": "prod"},
+  "run": {"id": "vr-local", "attempt": 1, "finishedAt": "2026-11-22T00:00:00Z"},
+  "result": "passed",
+  "checks": {
+    "folder": {"state": "passed", "name": "monitoring", "uid": "folder-local"},
+    "dashboards": [{"state": "passed", "uid": "monitoring-overview", "title": "Monitoring stack overview", "slug": "monitoring-stack-overview"}],
+    "datasources": [{"state": "passed", "logical": "prometheus", "name": "Mimir", "type": "prometheus"}],
+    "rules": [{"state": "passed", "file": "rules/client.yaml", "evaluation": "local"}]
+  },
+  "expiresAt": "2026-11-22T01:00:00Z"
+}

@@ -1,0 +1,34 @@
+{
+  "title": "Monitoring stack overview",
+  "uid": "monitoring-overview",
+  "schemaVersion": 40,
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "type": "textbox",
+        "value": "monitoring"
+      },
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {"text": "Mimir", "value": "mimir"}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Observability target availability",
+      "description": "Availability reported through the post-Alloy label contract for Mimir, Loki, Grafana, Alloy, and Kubernetes collectors.",
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "targets": [
+        {"refId": "A", "expr": "sum by (job, cluster) (up)"}
+      ],
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0}
+    }
+  ]
+}

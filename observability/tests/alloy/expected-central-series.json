@@ -1,0 +1,14 @@
+{
+  "fixtureVersion": "alloy-v1.13.0",
+  "labelContract": "inari.monitoring.post-alloy-labels/v1",
+  "reviewRequired": true,
+  "sourceConfig": "config.river",
+  "metric": "up",
+  "labels": {
+    "cluster": "kind-ci",
+    "instance": "metrics:8000",
+    "job": "mimir",
+    "org": "ci"
+  },
+  "value": 1
+}

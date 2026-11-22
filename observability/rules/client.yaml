@@ -1,0 +1,12 @@
+groups:
+  - name: monitoring-client
+    interval: 1m
+    rules:
+      - alert: MonitoringClientDown
+        expr: up{job=~"alloy|kube-state-metrics|node-exporter"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          app: monitoring
+        annotations:
+          summary: Client telemetry collector is down

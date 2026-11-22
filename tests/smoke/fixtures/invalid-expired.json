@@ -1,0 +1,66 @@
+{
+  "apiVersion": "inari.dev/v1alpha1",
+  "kind": "ObservabilityVerificationResult",
+  "companion": {
+    "id": "oc-central",
+    "generation": 1
+  },
+  "target": {
+    "id": "rt-central",
+    "revision": 1,
+    "clusterId": "central-cluster"
+  },
+  "app": {
+    "planId": "dp-central",
+    "instanceId": "app-central",
+    "sourceDigest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "revision": "revision-1"
+  },
+  "pack": {
+    "itemId": "hiroba/observability-pack",
+    "version": "0.1.0",
+    "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
+  "capabilityDigest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "suite": {
+    "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "profile": "stage"
+  },
+  "run": {
+    "id": "vr-central",
+    "attempt": 1,
+    "finishedAt": "2026-11-22T00:00:00Z"
+  },
+  "result": "passed",
+  "checks": {
+    "folder": {
+      "state": "passed",
+      "name": "monitoring",
+      "uid": "folder-central"
+    },
+    "dashboards": [
+      {
+        "state": "passed",
+        "uid": "monitoring-overview",
+        "title": "Monitoring stack overview",
+        "slug": "monitoring-stack-overview"
+      }
+    ],
+    "datasources": [
+      {
+        "state": "passed",
+        "logical": "prometheus",
+        "name": "Mimir",
+        "type": "prometheus"
+      }
+    ],
+    "rules": [
+      {
+        "state": "passed",
+        "file": "rules/app.yaml",
+        "evaluation": "central"
+      }
+    ]
+  },
+  "expiresAt": "2026-11-21T23:00:00Z"
+}

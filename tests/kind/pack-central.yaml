@@ -1,0 +1,15 @@
+apiVersion: kro.run/v1alpha1
+kind: ObservabilityPack
+metadata:
+  name: central
+  namespace: monitoring
+spec:
+  org: ci
+  namespace: monitoring
+  app: monitoring
+  team: platform-security
+  folder: monitoring
+  datasource: mimir
+  render: all
+  rulesCentral: true
+  rulesLocal: false

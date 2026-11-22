@@ -1,0 +1,25 @@
+evaluation_interval: 1m
+rule_files:
+  - ../../rules/app.yaml
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="mimir"}'
+        values: '1 1 1 1 0 0 0 0 0 0 0'
+    promql_expr_test:
+      - expr: monitoring:up:sum
+        eval_time: 0m
+        exp_samples:
+          - labels: 'monitoring:up:sum'
+            value: 1
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: MonitoringTargetDown
+        exp_alerts:
+          - exp_labels:
+              alertname: MonitoringTargetDown
+              app: monitoring
+              job: mimir
+              severity: critical
+            exp_annotations:
+              summary: Monitoring target is down
