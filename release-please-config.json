@@ -13,7 +13,8 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "Chart.yaml"
-      ]
+      ],
+      "component": "chart-monitoring"
     },
     "packages/monitoring-stack": {
       "release-type": "simple",
@@ -22,7 +23,8 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "package.yaml"
-      ]
+      ],
+      "component": "package-monitoring-stack"
     },
     "packages/observability-pack": {
       "release-type": "simple",
@@ -31,7 +33,8 @@
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         "package.yaml"
-      ]
+      ],
+      "component": "package-observability-pack"
     }
   }
 }
