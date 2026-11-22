@@ -69,7 +69,7 @@ class StackContractTests(unittest.TestCase):
             text = path.read_text()
             for line in text.splitlines():
                 if "7K-Hiroba/workflows/" in line and "uses:" in line:
-                    self.assertIn("ee08d62cea303ecc75322044cb1e3cf5d214c041", line, f"{path}: mutable workflow pin")
+                    self.assertIn("118baec9e2a12333a6930b85eb3ddb79e1c85079", line, f"{path}: mutable workflow pin")
 
 
 if __name__ == "__main__":

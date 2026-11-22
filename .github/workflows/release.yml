@@ -7,7 +7,7 @@ permissions: {contents: read}
 concurrency: {group: "hiroba-release-${{ github.repository }}", cancel-in-progress: false}
 jobs:
   release:
-    uses: 7K-Hiroba/workflows/.github/workflows/release.yml@ee08d62cea303ecc75322044cb1e3cf5d214c041 # v1.1.0
+    uses: 7K-Hiroba/workflows/.github/workflows/release.yml@118baec9e2a12333a6930b85eb3ddb79e1c85079 # v1.1.0
     with: {root: ., repair_tag: "${{ inputs.repair_tag }}", app-id: "${{ vars.HIROBA_RELEASE_APP_ID }}"}
     secrets:
       release-private-key: "${{ secrets.HIROBA_RELEASE_PRIVATE_KEY }}"
