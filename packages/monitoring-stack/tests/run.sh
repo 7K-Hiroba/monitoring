@@ -3,11 +3,26 @@ set -euo pipefail
 PACKAGE_DIR=$(cd "$(dirname "$0")/.." && pwd)
 ARGOCD_COMMIT=03c4ad854c1e6d922a121cd40f505d9bc6e402da
 
+# kubectl wait can fail immediately when a new resource has no conditions yet.
+# Poll the condition value so both CRD establishment and KRO reconciliation are
+# allowed to initialize without turning that transient state into a test error.
+wait_for_condition() {
+  local resource=$1 condition=$2 timeout=$3 status
+  for _ in $(seq 1 "$timeout"); do
+    status=$(kubectl get "$resource" -o "jsonpath={.status.conditions[?(@.type==\"${condition}\")].status}" 2>/dev/null || true)
+    if [[ "$status" == True ]]; then return 0; fi
+    sleep 1
+  done
+  echo "timed out waiting for $resource condition $condition" >&2
+  kubectl get "$resource" -o yaml || true
+  return 1
+}
+
 kubectl apply -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_COMMIT}/manifests/crds/application-crd.yaml"
-kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=60s
+wait_for_condition crd/applications.argoproj.io Established 60
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f "$PACKAGE_DIR/rgd.yaml"
-kubectl wait --for=condition=Ready rgd/monitoring-stack --timeout=120s
+wait_for_condition rgd/monitoring-stack Ready 120
 kubectl apply -f "$PACKAGE_DIR/tests/central.yaml" -f "$PACKAGE_DIR/tests/local.yaml" -f "$PACKAGE_DIR/tests/client.yaml" -f "$PACKAGE_DIR/tests/fixture.yaml"
 
 for name in monitoring-central monitoring-local monitoring-client monitoring-fixture; do

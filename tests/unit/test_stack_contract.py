@@ -154,12 +154,42 @@ class StackContractTests(unittest.TestCase):
             with self.subTest(path=path.name):
                 jsonschema.validate(self.load(path.relative_to(ROOT).as_posix())["spec"], schema)
 
+    def test_chart_testing_reuses_prepared_locked_dependencies(self):
+        self.assertTrue(self.load("ci/ct.yaml")["skip-helm-dependencies"])
+
+    def test_ephemeral_ci_loki_is_writable_and_does_not_reserve_large_caches(self):
+        paths = [
+            "charts/monitoring/ci/central-values.yaml",
+            "charts/monitoring/ci/local-values.yaml",
+            "charts/monitoring/ci/kind-values.yaml",
+            "tests/smoke/values.yaml",
+        ]
+        for relative in paths:
+            values = self.load(relative)
+            with self.subTest(path=relative):
+                loki = values["loki"]
+                self.assertFalse(loki["chunksCache"]["enabled"])
+                self.assertFalse(loki["resultsCache"]["enabled"])
+                single = loki["singleBinary"]
+                self.assertFalse(single["persistence"]["enabled"])
+                volumes = {volume["name"]: volume for volume in single["extraVolumes"]}
+                self.assertEqual({}, volumes["loki-data"]["emptyDir"])
+                mounts = {mount["name"]: mount for mount in single["extraVolumeMounts"]}
+                self.assertEqual("/var/loki", mounts["loki-data"]["mountPath"])
+                for component in ("ingester", "compactor", "store_gateway"):
+                    resources = values["mimir-distributed"][component]["resources"]
+                    self.assertEqual("10m", resources["requests"]["cpu"])
+
     def test_kro_tests_prepare_argocd_namespace_and_crd(self):
         for relative in ("packages/monitoring-stack/tests/run.sh", "tests/kind/test-stack.sh"):
             text = (ROOT / relative).read_text()
             with self.subTest(path=relative):
                 self.assertIn("kubectl create namespace argocd", text)
-                self.assertIn("kubectl wait --for=condition=Established crd/applications.argoproj.io", text)
+                if relative.startswith("packages/"):
+                    self.assertIn("wait_for_condition crd/applications.argoproj.io Established 60", text)
+                    self.assertIn("wait_for_condition rgd/monitoring-stack Ready 120", text)
+                else:
+                    self.assertIn("kubectl wait --for=condition=Established crd/applications.argoproj.io", text)
                 self.assertLess(text.index("crd/applications.argoproj.io"), text.index("rgd.yaml"))
 
     def test_kind_local_renderer_binds_real_digest_and_all_topologies(self):
@@ -177,6 +207,10 @@ class StackContractTests(unittest.TestCase):
             values = source["helm"]["valuesObject"]
             self.assertTrue(values["global"]["collectors"]["kubelet"]["insecureSkipVerify"])
             self.assertTrue(values["global"]["collectors"]["controlPlane"]["insecureSkipVerify"])
+            self.assertEqual("10m", values["mimir-distributed"]["ingester"]["resources"]["requests"]["cpu"])
+            self.assertFalse(values["loki"]["chunksCache"]["enabled"])
+            self.assertEqual("/var/loki", values["loki"]["singleBinary"]["extraVolumeMounts"][0]["mountPath"])
+            self.assertIn("blocks_storage", values["mimir-distributed"]["mimir"]["structuredConfig"])
             for topology in ("central", "local", "client"):
                 fixture = self.load((work / f"{topology}.yaml").as_posix())["spec"]
                 self.assertEqual(digest, fixture["chartDigest"])
@@ -191,6 +225,9 @@ class StackContractTests(unittest.TestCase):
     def test_kind_suite_executes_argocd_and_client_stack(self):
         text = (ROOT / "tests/kind/test-stack.sh").read_text()
         self.assertIn("manifests/core-install.yaml", text)
+        self.assertIn("kind: AppProject", text)
+        self.assertIn("name: default", text)
+        self.assertLess(text.index("kind: AppProject"), text.index('"$WORK/central.yaml"'))
         self.assertIn("wait_for_application \"$app\"", text)
         self.assertIn('test "$(kubectl get application "$app"', text)
         self.assertIn("deployment/monitoring-client-kube-state-metrics", text)

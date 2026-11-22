@@ -22,7 +22,36 @@ global:
 mimir-distributed:
   minio:
     enabled: true
+    resources: {requests: {cpu: 25m, memory: 64Mi}}
+  alertmanager:
+    resources: {requests: {cpu: 10m, memory: 32Mi}}
+  distributor:
+    resources: {requests: {cpu: 10m, memory: 64Mi}}
+  ingester:
+    resources: {requests: {cpu: 10m, memory: 128Mi}}
+  overrides_exporter:
+    resources: {requests: {cpu: 10m, memory: 32Mi}}
+  ruler:
+    resources: {requests: {cpu: 10m, memory: 64Mi}}
+  querier:
+    resources: {requests: {cpu: 10m, memory: 64Mi}}
+  query_frontend:
+    resources: {requests: {cpu: 10m, memory: 64Mi}}
+  query_scheduler:
+    resources: {requests: {cpu: 10m, memory: 64Mi}}
+  store_gateway:
+    resources: {requests: {cpu: 10m, memory: 128Mi}}
+  compactor:
+    resources: {requests: {cpu: 10m, memory: 128Mi}}
+  gateway:
+    resources: {requests: {cpu: 10m, memory: 32Mi}}
 loki:
+  chunksCache:
+    enabled: false
+  resultsCache:
+    enabled: false
+  gateway:
+    resources: {requests: {cpu: 10m, memory: 32Mi}}
   loki:
     schemaConfig:
       configs:
@@ -36,8 +65,15 @@ loki:
     storage:
       type: filesystem
   singleBinary:
+    resources: {requests: {cpu: 25m, memory: 128Mi}}
     persistence:
       enabled: false
+    extraVolumes:
+      - name: loki-data
+        emptyDir: {}
+    extraVolumeMounts:
+      - name: loki-data
+        mountPath: /var/loki
 grafana:
   persistence:
     enabled: false

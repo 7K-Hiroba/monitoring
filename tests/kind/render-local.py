@@ -10,6 +10,15 @@ from pathlib import Path
 import yaml
 
 
+def merge_values(target: dict, overlay: dict) -> None:
+    """Recursively apply CI values without discarding signed RGD expressions."""
+    for key, value in overlay.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            merge_values(target[key], value)
+        else:
+            target[key] = value
+
+
 def render(root: Path, work: Path, registry: str, digest: str, control_plane: str) -> None:
     if not re.fullmatch(r"[a-z0-9.-]+:[0-9]+", registry):
         raise ValueError("registry must be an in-cluster DNS host and port")
@@ -25,6 +34,9 @@ def render(root: Path, work: Path, registry: str, digest: str, control_plane: st
     values = application["spec"]["source"]["helm"]["valuesObject"]
     values["global"]["collectors"]["kubelet"]["insecureSkipVerify"] = True
     values["global"]["collectors"]["controlPlane"]["insecureSkipVerify"] = True
+    kind_values = yaml.safe_load((root / "charts/monitoring/ci/kind-values.yaml").read_text())
+    for component in ("mimir-distributed", "loki"):
+        merge_values(values.setdefault(component, {}), kind_values[component])
     # Anonymous admin is confined to this disposable kind fixture. The signed
     # chart/RGD never enables it for a real target.
     values["grafana"] = {

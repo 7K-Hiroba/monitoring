@@ -105,7 +105,31 @@ helm upgrade --install kro oci://registry.k8s.io/kro/charts/kro \
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_COMMIT}/manifests/core-install.yaml"
 kubectl wait --for=condition=Established crd/applications.argoproj.io --timeout=60s
+kubectl wait --for=condition=Established crd/appprojects.argoproj.io --timeout=60s
 kubectl wait --for=condition=Available deployment -n argocd --all --timeout=300s
+# core-install deliberately has no default project. Create a narrowly scoped
+# disposable project so the real application controller can reconcile KRO output.
+cat > "$WORK/argocd-project.yaml" <<EOF
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: default
+  namespace: argocd
+spec:
+  sourceRepos:
+    - oci://$REGISTRY_HOST/charts/monitoring
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: monitoring
+    - server: https://kubernetes.default.svc
+      namespace: monitoring-local
+    - server: https://kubernetes.default.svc
+      namespace: monitoring-client
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+EOF
+kubectl apply -f "$WORK/argocd-project.yaml"
 cat > "$WORK/argocd-repository.yaml" <<EOF
 apiVersion: v1
 kind: Secret
