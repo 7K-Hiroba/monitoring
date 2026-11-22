@@ -14,7 +14,9 @@ finish() {
   if [[ "${KEEP_KIND:-false}" != true ]]; then
     mkdir -p "$ROOT/diagnostics"
     kubectl get all -A -o wide > "$DIAGNOSTICS" 2>&1 || true
+    kubectl get rgd -A -o yaml >> "$DIAGNOSTICS" 2>&1 || true
     kubectl get events -A --sort-by=.lastTimestamp >> "$DIAGNOSTICS" 2>&1 || true
+    kubectl logs -n kro-system deploy/kro --tail=200 >> "$DIAGNOSTICS" 2>&1 || true
     kind delete cluster --name "$CLUSTER" >/dev/null 2>&1 || true
   fi
 }
