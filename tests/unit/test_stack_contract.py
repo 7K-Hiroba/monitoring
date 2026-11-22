@@ -4,6 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
+import jsonschema
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -105,6 +106,7 @@ class StackContractTests(unittest.TestCase):
         for component in ("mimir", "grafana", "loki", "alloy"):
             self.assertIn(f'prometheus.scrape "{component}"', content)
         self.assertEqual(3, content.count('if ne .Values.global.topology "client"'))
+        self.assertNotIn('mimir-gateway.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"', content)
         self.assertEqual("SingleBinary", self.load("charts/monitoring/values.yaml")["loki"]["deploymentMode"])
         self.assertGreaterEqual(content.count("forward_to = [prometheus.relabel.central.receiver]"), 8)
         self.assertIn("targets = discovery.kubernetes.pods.targets", content)
@@ -125,6 +127,28 @@ class StackContractTests(unittest.TestCase):
         rendered = yaml.dump(rgd)
         self.assertNotIn("secretAccessKey", rendered)
         self.assertNotIn("accessKeyId", rendered)
+
+    def test_rgd_mimir_and_alertmanager_support_external_storage(self):
+        rgd = self.load("packages/monitoring-stack/rgd.yaml")
+        schema = rgd["spec"]["schema"]["spec"]
+        for field in ("mimirS3Endpoint", "mimirS3Region", "mimirBlocksBucket", "mimirAlertmanagerBucket", "mimirCredentialsSecret", "mimirS3ForcePathStyle"):
+            self.assertIn(field, schema)
+        mimir = rgd["spec"]["resources"][0]["template"]["spec"]["source"]["helm"]["valuesObject"]["mimir-distributed"]
+        structured = mimir["mimir"]["structuredConfig"]
+        self.assertIn("blocks_storage", structured)
+        self.assertIn("alertmanager_storage", structured)
+        self.assertIn("schema.spec.mimirBlocksBucket", structured)
+        self.assertIn("schema.spec.mimirAlertmanagerBucket", structured)
+        self.assertIn("schema.spec.mimirCredentialsSecret", mimir["global"]["extraEnvFrom"])
+        rendered = yaml.dump(rgd)
+        self.assertNotIn("secretAccessKey", rendered)
+        self.assertNotIn("accessKeyId", rendered)
+
+    def test_monitoring_stack_fixtures_match_package_schema(self):
+        schema = self.load("packages/monitoring-stack/values.schema.json")
+        for path in (ROOT / "packages/monitoring-stack/tests").glob("*.yaml"):
+            with self.subTest(path=path.name):
+                jsonschema.validate(self.load(path.relative_to(ROOT).as_posix())["spec"], schema)
 
     def test_kro_tests_prepare_argocd_namespace_and_crd(self):
         for relative in ("packages/monitoring-stack/tests/run.sh", "tests/kind/test-stack.sh"):

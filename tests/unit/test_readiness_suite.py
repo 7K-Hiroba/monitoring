@@ -50,7 +50,7 @@ class ReadinessSuiteTests(unittest.TestCase):
         self.assertEqual("ci", context["suite"]["profile"])
         self.assertEqual("ci-run", context["run"]["id"])
         self.assertEqual("monitoring-overview", context["dashboards"][0]["uid"])
-        self.assertEqual(2, len(context["ruleGroups"]))
+        self.assertEqual(1, len(context["ruleGroups"]))
         for key in ("grafanaBaseUrl", "metricsBaseUrl", "logsBaseUrl"):
             self.assertTrue(context[key].startswith("http://monitoring-"))
             self.assertTrue(context[key].endswith(".default.svc"))

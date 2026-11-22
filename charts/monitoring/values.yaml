@@ -218,7 +218,6 @@ alloy:
             {"__address__" = "{{ .Release.Name }}-mimir-alertmanager.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
             {"__address__" = "{{ .Release.Name }}-mimir-compactor.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
             {"__address__" = "{{ .Release.Name }}-mimir-distributor.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
-            {"__address__" = "{{ .Release.Name }}-mimir-gateway.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
             {"__address__" = "{{ .Release.Name }}-mimir-ingester.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
             {"__address__" = "{{ .Release.Name }}-mimir-overrides-exporter.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},
             {"__address__" = "{{ .Release.Name }}-mimir-querier.{{ .Release.Namespace }}.svc:8080", "job" = "mimir"},

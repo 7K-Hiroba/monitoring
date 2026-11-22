@@ -22,6 +22,12 @@ spec:
       lokiPushUrl: string | default=""
       controlPlaneTargets: string | default=""
       ephemeralObjectStorage: boolean | default=false
+      mimirS3Endpoint: string | default=""
+      mimirS3Region: string | default=""
+      mimirBlocksBucket: string | default="mimir-blocks"
+      mimirAlertmanagerBucket: string | default="mimir-alertmanager"
+      mimirCredentialsSecret: string | default=""
+      mimirS3ForcePathStyle: boolean | default=false
       lokiS3Endpoint: string | default=""
       lokiS3Region: string | default=""
       lokiChunksBucket: string | default="loki-chunks"
@@ -79,8 +85,12 @@ spec:
                       enabled: true
                       targets: '${schema.spec.controlPlaneTargets == "" ? [] : schema.spec.controlPlaneTargets.split(",")}'
                 mimir-distributed:
+                  global:
+                    extraEnvFrom: '${schema.spec.mimirCredentialsSecret == "" ? [] : [{"secretRef": {"name": schema.spec.mimirCredentialsSecret}}]}'
                   minio:
                     enabled: ${schema.spec.ephemeralObjectStorage}
+                  mimir:
+                    structuredConfig: '${schema.spec.ephemeralObjectStorage ? {} : {"blocks_storage": {"backend": "s3", "s3": {"bucket_name": schema.spec.mimirBlocksBucket, "endpoint": schema.spec.mimirS3Endpoint, "region": schema.spec.mimirS3Region, "force_path_style": schema.spec.mimirS3ForcePathStyle}}, "alertmanager_storage": {"backend": "s3", "s3": {"bucket_name": schema.spec.mimirAlertmanagerBucket, "endpoint": schema.spec.mimirS3Endpoint, "region": schema.spec.mimirS3Region, "force_path_style": schema.spec.mimirS3ForcePathStyle}}}}'
                 loki:
                   loki:
                     schemaConfig:

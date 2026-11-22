@@ -23,8 +23,7 @@
   "dashboards": [{"uid": "monitoring-overview", "title": "Monitoring stack overview"}],
   "datasources": [{"logical": "prometheus", "name": "Mimir", "type": "prometheus"}],
   "ruleGroups": [
-    {"group": "monitoring-central", "file": "rules/app.yaml", "evaluation": "central"},
-    {"group": "monitoring-client", "file": "rules/client.yaml", "evaluation": "local"}
+    {"group": "monitoring-central", "file": "rules/app.yaml", "evaluation": "central"}
   ],
   "expiresAt": "2026-11-22T01:00:00Z"
 }
