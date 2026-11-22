@@ -105,6 +105,12 @@ helm upgrade --install kro oci://registry.k8s.io/kro/charts/kro \
   --namespace kro-system --create-namespace --version 0.6.1 --wait --timeout 180s
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -n argocd -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_COMMIT}/manifests/core-install.yaml"
+# core-install leaves the secret empty. Give this disposable cluster a unique
+# key so Application destination validation and reconciliation can proceed.
+SERVER_SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+kubectl create secret generic argocd-secret --namespace argocd --dry-run=client -o yaml \
+  --from-literal server.secretkey="$SERVER_SECRET_KEY" | kubectl apply -f -
+unset SERVER_SECRET_KEY
 # Pull the exact image from Docker Hub rather than relying on the manifest's
 # public-ECR mirror, which is rate-limited in hosted CI.
 kubectl set image deployment/argocd-redis redis="$REDIS_IMAGE" --namespace argocd
