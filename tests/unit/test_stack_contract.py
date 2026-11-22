@@ -63,6 +63,7 @@ class StackContractTests(unittest.TestCase):
         self.assertEqual("Application", application["kind"])
         source = application["spec"]["source"]
         self.assertEqual("oci://ghcr.io/7k-hiroba/monitoring/charts/monitoring", source["repoURL"])
+        self.assertEqual(".", source["path"])
         self.assertNotIn("chart", source)
         self.assertEqual("${schema.spec.chartDigest}", source["targetRevision"])
         self.assertEqual("${schema.spec.chartVersion}", application["metadata"]["annotations"]["inari.dev/chart-version"])

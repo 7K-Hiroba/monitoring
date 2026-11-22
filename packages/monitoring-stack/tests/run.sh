@@ -35,6 +35,7 @@ for name in monitoring-central monitoring-local monitoring-client monitoring-fix
   kubectl get application "$name" -n argocd >/dev/null
   test "$(kubectl get application "$name" -n argocd -o jsonpath='{.spec.source.repoURL}')" = "oci://ghcr.io/7k-hiroba/monitoring/charts/monitoring"
   test "$(kubectl get application "$name" -n argocd -o jsonpath='{.spec.source.targetRevision}')" = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  test "$(kubectl get application "$name" -n argocd -o jsonpath='{.spec.source.path}')" = "."
   test "$(kubectl get application "$name" -n argocd -o jsonpath='{.spec.source.chart}')" = ""
   test "$(kubectl get application "$name" -n argocd -o jsonpath='{.metadata.annotations.inari\.dev/chart-version}')" = "0.1.0"
   test "$(kubectl get application "$name" -n argocd -o jsonpath='{.metadata.annotations.inari\.dev/chart-digest}')" = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

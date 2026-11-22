@@ -57,6 +57,9 @@ spec:
             namespace: ${schema.spec.namespace}
           source:
             repoURL: oci://ghcr.io/7k-hiroba/monitoring/charts/monitoring
+            # ArgoCD requires an OCI content root even when targetRevision is
+            # an exact digest; the signed chart archive is rooted at `.`.
+            path: .
             targetRevision: ${schema.spec.chartDigest}
             helm:
               releaseName: ${schema.spec.name}
