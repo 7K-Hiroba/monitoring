@@ -1,0 +1,3 @@
+# HELP up Representative availability sample used to verify post-Alloy labels.
+# TYPE up gauge
+up{job="mimir",instance="ci"} 1

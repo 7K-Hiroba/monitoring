@@ -1,0 +1,16 @@
+contractVersion: inari.monitoring.post-alloy-labels/v1
+alloyVersion: 1.13.0
+stabilityLevel: generally-available
+communityComponents: false
+requiredLabels:
+  - org
+  - cluster
+  - job
+  - instance
+optionalLabels:
+  - namespace
+  - app
+preservedMetricName: true
+sourceConfig: observability/tests/alloy/config.river
+reviewRequired: true
+centralRuleSemantics: Central recording and alerting rules consume only series carrying this contract's post-Alloy labels.

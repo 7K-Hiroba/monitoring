@@ -1,0 +1,24 @@
+# Non-ephemeral external-storage fixture; topology behavior is covered separately.
+apiVersion: observability.inari.io/v1alpha1
+kind: MonitoringStack
+metadata:
+  name: fixture
+  namespace: default
+spec:
+  name: monitoring-fixture
+  topology: central
+  org: ci
+  chartVersion: 0.1.0
+  chartDigest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  mimirS3Endpoint: s3.example.com
+  mimirS3Region: test-1
+  mimirBlocksBucket: mimir-blocks-ci
+  mimirAlertmanagerBucket: mimir-alertmanager-ci
+  mimirCredentialsSecret: mimir-credentials
+  mimirS3ForcePathStyle: true
+  lokiS3Endpoint: s3.example.com
+  lokiS3Region: test-1
+  lokiChunksBucket: chunks-ci
+  lokiRulerBucket: ruler-ci
+  lokiCredentialsSecret: loki-credentials
+  lokiS3ForcePathStyle: true

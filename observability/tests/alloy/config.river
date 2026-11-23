@@ -1,0 +1,29 @@
+// Real Alloy pipeline fixture. The integration runner replaces only the two
+// endpoint placeholders with ephemeral CI container addresses.
+prometheus.scrape "mimir" {
+	targets         = [{"__address__" = "__TARGET__", "job" = "mimir"}]
+	metrics_path    = "/input.prom"
+	scrape_interval = "1s"
+	scrape_timeout  = "500ms"
+	honor_labels    = true
+	forward_to      = [prometheus.relabel.central.receiver]
+}
+
+prometheus.relabel "central" {
+	rule {
+		target_label = "org"
+		replacement  = "ci"
+	}
+
+	rule {
+		target_label = "cluster"
+		replacement  = "kind-ci"
+	}
+	forward_to = [prometheus.remote_write.central.receiver]
+}
+
+prometheus.remote_write "central" {
+	endpoint {
+		url = "__REMOTE_WRITE_URL__"
+	}
+}

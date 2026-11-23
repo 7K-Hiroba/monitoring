@@ -1,0 +1,150 @@
+apiVersion: kro.run/v1alpha1
+kind: ResourceGraphDefinition
+metadata:
+  name: monitoring-stack
+  annotations:
+    inari.dev/stack-contract: inari.monitoring-stack/v1
+spec:
+  schema:
+    group: observability.inari.io
+    apiVersion: v1alpha1
+    kind: MonitoringStack
+    spec:
+      name: string | default="monitoring"
+      namespace: string | default="monitoring"
+      argocdNamespace: string | default="argocd"
+      project: string | default="default"
+      topology: string | default="central"
+      org: string | required=true
+      chartVersion: string | required=true
+      chartDigest: string | required=true
+      remoteWriteUrl: string | default=""
+      lokiPushUrl: string | default=""
+      controlPlaneTargets: string | default=""
+      ephemeralObjectStorage: boolean | default=false
+      mimirS3Endpoint: string | default=""
+      mimirS3Region: string | default=""
+      mimirBlocksBucket: string | default="mimir-blocks"
+      mimirAlertmanagerBucket: string | default="mimir-alertmanager"
+      mimirCredentialsSecret: string | default=""
+      mimirS3ForcePathStyle: boolean | default=false
+      lokiS3Endpoint: string | default=""
+      lokiS3Region: string | default=""
+      lokiChunksBucket: string | default="loki-chunks"
+      lokiRulerBucket: string | default="loki-ruler"
+      lokiCredentialsSecret: string | default=""
+      lokiS3ForcePathStyle: boolean | default=false
+    status:
+      ready: ${application.?status.?health.?status.orValue("") == "Healthy" && application.?status.?sync.?status.orValue("") == "Synced"}
+  resources:
+    - id: application
+      template:
+        apiVersion: argoproj.io/v1alpha1
+        kind: Application
+        metadata:
+          name: ${schema.spec.name}
+          namespace: ${schema.spec.argocdNamespace}
+          labels:
+            app.kubernetes.io/name: monitoring
+            inari.dev/topology: ${schema.spec.topology}
+          annotations:
+            inari.dev/chart-version: ${schema.spec.chartVersion}
+            inari.dev/chart-digest: ${schema.spec.chartDigest}
+        spec:
+          project: ${schema.spec.project}
+          destination:
+            server: https://kubernetes.default.svc
+            namespace: ${schema.spec.namespace}
+          source:
+            repoURL: oci://ghcr.io/7k-hiroba/monitoring/charts/monitoring
+            # ArgoCD requires an OCI content root even when targetRevision is
+            # an exact digest; the signed chart archive is rooted at `.`.
+            path: .
+            targetRevision: ${schema.spec.chartDigest}
+            helm:
+              releaseName: ${schema.spec.name}
+              valueFiles: []
+              valuesObject:
+                topology: ${schema.spec.topology}
+                components:
+                  mimir: ${schema.spec.topology != "client"}
+                  alertmanager: ${schema.spec.topology != "client"}
+                  grafana: ${schema.spec.topology != "client"}
+                  loki: ${schema.spec.topology != "client"}
+                  alloy: true
+                  kubeStateMetrics: true
+                  nodeExporter: true
+                global:
+                  topology: ${schema.spec.topology}
+                  telemetry:
+                    org: ${schema.spec.org}
+                    remoteWriteUrl: ${schema.spec.remoteWriteUrl}
+                    lokiPushUrl: ${schema.spec.lokiPushUrl}
+                  collectors:
+                    kubelet:
+                      enabled: true
+                    controlPlane:
+                      enabled: true
+                      targets: '${schema.spec.controlPlaneTargets == "" ? [] : schema.spec.controlPlaneTargets.split(",")}'
+                mimir-distributed:
+                  global:
+                    # KRO v0.6.1 does not recursively convert CEL map/list
+                    # literals. Keep this list static and vary only its scalar
+                    # secret name; optional preserves secret-free MinIO CI.
+                    extraEnvFrom:
+                      - secretRef:
+                          name: '${schema.spec.mimirCredentialsSecret == "" ? "monitoring-mimir-credentials-absent" : schema.spec.mimirCredentialsSecret}'
+                          optional: true
+                  minio:
+                    enabled: ${schema.spec.ephemeralObjectStorage}
+                  mimir:
+                    structuredConfig:
+                      blocks_storage:
+                        backend: s3
+                        s3:
+                          bucket_name: '${schema.spec.ephemeralObjectStorage ? "mimir-tsdb" : schema.spec.mimirBlocksBucket}'
+                          endpoint: '${schema.spec.ephemeralObjectStorage ? schema.spec.name + "-minio." + schema.spec.namespace + ".svc:9000" : schema.spec.mimirS3Endpoint}'
+                          region: ${schema.spec.mimirS3Region}
+                          force_path_style: ${schema.spec.mimirS3ForcePathStyle}
+                          insecure: ${schema.spec.ephemeralObjectStorage}
+                      alertmanager_storage:
+                        backend: s3
+                        s3:
+                          bucket_name: '${schema.spec.ephemeralObjectStorage ? "mimir-ruler" : schema.spec.mimirAlertmanagerBucket}'
+                          endpoint: '${schema.spec.ephemeralObjectStorage ? schema.spec.name + "-minio." + schema.spec.namespace + ".svc:9000" : schema.spec.mimirS3Endpoint}'
+                          region: ${schema.spec.mimirS3Region}
+                          force_path_style: ${schema.spec.mimirS3ForcePathStyle}
+                          insecure: ${schema.spec.ephemeralObjectStorage}
+                loki:
+                  loki:
+                    schemaConfig:
+                      configs:
+                        - from: "2026-01-01"
+                          store: tsdb
+                          object_store: '${schema.spec.ephemeralObjectStorage ? "filesystem" : "s3"}'
+                          schema: v13
+                          index:
+                            prefix: index_
+                            period: 24h
+                    storage:
+                      type: '${schema.spec.ephemeralObjectStorage ? "filesystem" : "s3"}'
+                      bucketNames:
+                        chunks: ${schema.spec.lokiChunksBucket}
+                        ruler: ${schema.spec.lokiRulerBucket}
+                      s3:
+                        endpoint: ${schema.spec.lokiS3Endpoint}
+                        region: ${schema.spec.lokiS3Region}
+                        s3ForcePathStyle: ${schema.spec.lokiS3ForcePathStyle}
+                  singleBinary:
+                    persistence:
+                      enabled: ${!schema.spec.ephemeralObjectStorage}
+                    extraEnvFrom:
+                      - secretRef:
+                          name: '${schema.spec.lokiCredentialsSecret == "" ? "monitoring-loki-credentials-absent" : schema.spec.lokiCredentialsSecret}'
+                          optional: true
+          syncPolicy:
+            automated: {}
+            syncOptions:
+              - CreateNamespace=true
+              - ServerSideApply=true
+          revisionHistoryLimit: 3

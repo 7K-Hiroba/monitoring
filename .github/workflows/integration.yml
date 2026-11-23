@@ -1,0 +1,36 @@
+name: full-stack integration
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {fetch-depth: 0}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: 7K-Hiroba/workflows
+          ref: df9f8cbfc617bf8e8d14e780c6f719cbc110bf58
+          path: .hiroba/workflows
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5
+      - run: python -m pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - run: .hiroba/workflows/scripts/install-ci-tools.sh promtool alloy kind
+      - run: python .hiroba/workflows/scripts/prepare-chart.py --chart charts/monitoring
+      - run: ./scripts/test-alloy-pipeline.sh --check
+      - run: ./tests/grafana/test-provisioning.sh
+      - run: ./tests/kind/test-stack.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: failure()
+        with:
+          name: full-stack-diagnostics
+          path: diagnostics/
+          if-no-files-found: ignore
+          retention-days: 14
