@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -300,6 +302,56 @@ class StackContractTests(unittest.TestCase):
         self.assertIn("deployment/monitoring-client-kube-state-metrics", install)
         self.assertIn("daemonset/monitoring-client-alloy", install)
         self.assertNotIn('helm upgrade --install "$release"', install + upgrade)
+
+    def test_application_wait_requires_applied_revision_and_successful_operation(self):
+        expected = "sha256:" + "a" * 64
+        previous = "sha256:" + "b" * 64
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            work = base / "work"
+            fake_bin = base / "bin"
+            work.mkdir()
+            fake_bin.mkdir()
+            (work / "registry.env").write_text("HIROBA_REGISTRY_HOST=registry.example:5000\nHIROBA_REGISTRY_LOCAL=127.0.0.1:5000\n")
+            kubectl = fake_bin / "kubectl"
+            kubectl.write_text("""#!/usr/bin/env bash
+case "$*" in
+  *status.health.status*) printf Healthy ;;
+  *status.sync.status*) printf Synced ;;
+  *status.sync.revision*) printf '%s' "$APPLIED_DIGEST" ;;
+  *status.operationState.phase*) printf '%s' "$OPERATION_PHASE" ;;
+  *spec.source.targetRevision*) printf '%s' "$EXPECTED_DIGEST" ;;
+  *chart-version*) printf '0.1.0' ;;
+  *) exit 1 ;;
+esac
+""")
+            kubectl.chmod(0o755)
+
+            def run_wait(applied, phase):
+                env = os.environ.copy()
+                env.update({
+                    "PATH": str(fake_bin) + os.pathsep + env["PATH"],
+                    "HIROBA_STACK_ROOT": str(ROOT),
+                    "HIROBA_STACK_WORK": str(work),
+                    "EXPECTED_DIGEST": expected,
+                    "APPLIED_DIGEST": applied,
+                    "OPERATION_PHASE": phase,
+                })
+                return subprocess.run(
+                    ["timeout", "1", "bash", "-c", f'source "{ROOT}/tests/stack/lifecycle-lib.sh"; wait_for_application monitoring-central "$EXPECTED_DIGEST" 0.1.0'],
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                    timeout=5,
+                )
+
+            stale = run_wait(previous, "Succeeded")
+            self.assertEqual(stale.returncode, 124, stale.stdout + stale.stderr)
+            running = run_wait(expected, "Running")
+            self.assertEqual(running.returncode, 124, running.stdout + running.stderr)
+            converged = run_wait(expected, "Succeeded")
+            self.assertEqual(converged.returncode, 0, converged.stdout + converged.stderr)
 
     def test_workflow_callers_use_the_approved_immutable_release(self):
         for path in (ROOT / ".github/workflows").glob("*.yml"):

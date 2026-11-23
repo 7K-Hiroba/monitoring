@@ -8,13 +8,15 @@ export REGISTRY_HOST=$HIROBA_REGISTRY_HOST
 export REGISTRY_LOCAL=$HIROBA_REGISTRY_LOCAL
 
 wait_for_application() {
-  local name=$1 expected_digest=$2 expected_version=$3 health sync digest version
+  local name=$1 expected_digest=$2 expected_version=$3 health sync digest version applied operation
   for _ in $(seq 1 360); do
     health=$(kubectl get application "$name" -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || true)
     sync=$(kubectl get application "$name" -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || true)
     digest=$(kubectl get application "$name" -n argocd -o jsonpath='{.spec.source.targetRevision}' 2>/dev/null || true)
     version=$(kubectl get application "$name" -n argocd -o jsonpath='{.metadata.annotations.inari\.dev/chart-version}' 2>/dev/null || true)
-    if [[ "$health" == Healthy && "$sync" == Synced && "$digest" == "$expected_digest" && "$version" == "$expected_version" ]]; then return 0; fi
+    applied=$(kubectl get application "$name" -n argocd -o jsonpath='{.status.sync.revision}' 2>/dev/null || true)
+    operation=$(kubectl get application "$name" -n argocd -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)
+    if [[ "$health" == Healthy && "$sync" == Synced && "$digest" == "$expected_digest" && "$version" == "$expected_version" && "$applied" == "$expected_digest" && "$operation" == Succeeded ]]; then return 0; fi
     sleep 2
   done
   kubectl get application "$name" -n argocd -o yaml || true
