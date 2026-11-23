@@ -2,6 +2,8 @@
 
 The classified monitoring stack uses the shared `test-stack.yml` lifecycle and **one disposable kind cluster per job**. The workflow library owns the central kind/KRO/ArgoCD/tool pins, exact-content cache, disposable OCI registry, diagnostics, evidence, and cleanup. Consumer phases own only monitoring fixtures and assertions.
 
+For pull requests, the check's `head_sha` remains associated with the reviewed PR head while the default checkout tests the exact merge tree. Evidence `sourceSha` records that merge tree; record both identities when citing hosted results. Push and release callers bind evidence to their exact pushed or released source.
+
 ## Install
 
 - Package the current compatible chart with CI-only `-ci.0` prerelease metadata because no earlier released chart exists. Push it only to the disposable in-cluster registry and resolve its actual OCI digest.

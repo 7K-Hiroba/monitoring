@@ -38,4 +38,6 @@ jobs:
           retention-days: 14
   integration:
     uses: 7K-Hiroba/workflows/.github/workflows/test-stack.yml@dd42626e804aa4540351d4e7fcc1d2ea30101986 # v1.1.0
+    # The PR check remains associated with the head; the default checkout binds
+    # evidence to the exact merge tree (or push SHA) being tested.
     with: {root: .}

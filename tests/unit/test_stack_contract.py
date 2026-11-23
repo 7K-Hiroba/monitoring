@@ -353,6 +353,13 @@ esac
             converged = run_wait(expected, "Succeeded")
             self.assertEqual(converged.returncode, 0, converged.stdout + converged.stderr)
 
+    def test_pr_evidence_distinguishes_head_and_merge_tree(self):
+        integration = (ROOT / ".github/workflows/integration.yml").read_text()
+        self.assertIn("merge tree", integration)
+        readme = (ROOT / "tests/stack/README.md").read_text()
+        self.assertIn("head_sha", readme)
+        self.assertIn("sourceSha", readme)
+
     def test_workflow_callers_use_the_approved_immutable_release(self):
         for path in (ROOT / ".github/workflows").glob("*.yml"):
             text = path.read_text()
