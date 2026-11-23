@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: 7K-Hiroba/workflows
-          ref: ed7c4a964b8605f118cc24765a22e12eae616c98
+          ref: 522c3530c94336249928f5a65a5a9f98c46bf540
           path: .hiroba/workflows
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with: {python-version: "3.11"}
@@ -37,7 +37,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   integration:
-    uses: 7K-Hiroba/workflows/.github/workflows/test-stack.yml@ed7c4a964b8605f118cc24765a22e12eae616c98 # v1.1.0
+    uses: 7K-Hiroba/workflows/.github/workflows/test-stack.yml@522c3530c94336249928f5a65a5a9f98c46bf540 # v1.1.0
     # The PR check remains associated with the head; the default checkout binds
     # evidence to the exact merge tree (or push SHA) being tested.
     with: {root: .}
