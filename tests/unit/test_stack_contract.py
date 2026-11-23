@@ -150,12 +150,15 @@ class StackContractTests(unittest.TestCase):
     def test_rgd_mimir_and_alertmanager_support_external_storage(self):
         rgd = self.load("packages/monitoring-stack/rgd.yaml")
         schema = rgd["spec"]["schema"]["spec"]
-        for field in ("mimirS3Endpoint", "mimirS3Region", "mimirBlocksBucket", "mimirAlertmanagerBucket", "mimirCredentialsSecret", "mimirS3ForcePathStyle"):
+        for field in ("mimirS3Endpoint", "mimirS3Region", "mimirBlocksBucket", "mimirAlertmanagerBucket", "mimirCredentialsSecret"):
             self.assertIn(field, schema)
+        self.assertNotIn("mimirS3ForcePathStyle", schema)
         mimir = rgd["spec"]["resources"][0]["template"]["spec"]["source"]["helm"]["valuesObject"]["mimir-distributed"]
         structured = mimir["mimir"]["structuredConfig"]
         blocks = structured["blocks_storage"]["s3"]
         alerts = structured["alertmanager_storage"]["s3"]
+        self.assertNotIn("force_path_style", blocks)
+        self.assertNotIn("force_path_style", alerts)
         self.assertIn("schema.spec.mimirBlocksBucket", blocks["bucket_name"])
         self.assertIn("schema.spec.mimirAlertmanagerBucket", alerts["bucket_name"])
         self.assertIn("schema.spec.mimirS3Endpoint", blocks["endpoint"])

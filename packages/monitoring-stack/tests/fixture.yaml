@@ -15,7 +15,6 @@ spec:
   mimirBlocksBucket: mimir-blocks-ci
   mimirAlertmanagerBucket: mimir-alertmanager-ci
   mimirCredentialsSecret: mimir-credentials
-  mimirS3ForcePathStyle: true
   lokiS3Endpoint: s3.example.com
   lokiS3Region: test-1
   lokiChunksBucket: chunks-ci

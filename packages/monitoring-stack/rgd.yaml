@@ -27,7 +27,6 @@ spec:
       mimirBlocksBucket: string | default="mimir-blocks"
       mimirAlertmanagerBucket: string | default="mimir-alertmanager"
       mimirCredentialsSecret: string | default=""
-      mimirS3ForcePathStyle: boolean | default=false
       lokiS3Endpoint: string | default=""
       lokiS3Region: string | default=""
       lokiChunksBucket: string | default="loki-chunks"
@@ -105,7 +104,6 @@ spec:
                           bucket_name: '${schema.spec.ephemeralObjectStorage ? "mimir-tsdb" : schema.spec.mimirBlocksBucket}'
                           endpoint: '${schema.spec.ephemeralObjectStorage ? schema.spec.name + "-minio." + schema.spec.namespace + ".svc:9000" : schema.spec.mimirS3Endpoint}'
                           region: ${schema.spec.mimirS3Region}
-                          force_path_style: ${schema.spec.mimirS3ForcePathStyle}
                           insecure: ${schema.spec.ephemeralObjectStorage}
                       alertmanager_storage:
                         backend: s3
@@ -113,7 +111,6 @@ spec:
                           bucket_name: '${schema.spec.ephemeralObjectStorage ? "mimir-ruler" : schema.spec.mimirAlertmanagerBucket}'
                           endpoint: '${schema.spec.ephemeralObjectStorage ? schema.spec.name + "-minio." + schema.spec.namespace + ".svc:9000" : schema.spec.mimirS3Endpoint}'
                           region: ${schema.spec.mimirS3Region}
-                          force_path_style: ${schema.spec.mimirS3ForcePathStyle}
                           insecure: ${schema.spec.ephemeralObjectStorage}
                 loki:
                   loki:
