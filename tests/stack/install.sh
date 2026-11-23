@@ -4,6 +4,7 @@ set -euo pipefail
 source "$HIROBA_STACK_ROOT/tests/stack/lifecycle-lib.sh"
 
 CHART_VERSION=$(helm show chart "$ROOT/charts/monitoring" | awk '/^version:/ {print $2}')
+${HIROBA_PYTHON:-python3} "$HIROBA_WORKFLOW_ROOT/scripts/prepare-chart.py" --chart "$ROOT/charts/monitoring"
 [[ "$CHART_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 PREVIOUS_CHART_VERSION="${CHART_VERSION}-ci.0"
 push_chart_version "$PREVIOUS_CHART_VERSION" "$WORK/previous"

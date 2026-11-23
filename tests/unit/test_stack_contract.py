@@ -270,6 +270,7 @@ class StackContractTests(unittest.TestCase):
             for functional in ("/prometheus/api/v1/query", "/prometheus/api/v1/rules", "/loki/api/v1/labels", "/alertmanager/api/v2/status", "/api/dashboards/uid"):
                 self.assertNotIn(functional, text)
         self.assertIn("PREVIOUS_CHART_VERSION", install)
+        self.assertIn("prepare-chart.py", install)
         self.assertIn("PREVIOUS_CHART_DIGEST", install)
         self.assertIn("INGESTER_PVC_UID", install)
         self.assertIn("CLIENT_REMOTE_WRITE", install)
