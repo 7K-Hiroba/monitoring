@@ -23,6 +23,8 @@ mimir-distributed:
   minio:
     enabled: true
     resources: {requests: {cpu: 25m, memory: 64Mi}}
+  rollout_operator:
+    resources: {requests: {cpu: 10m, memory: 32Mi}}
   alertmanager:
     resources: {requests: {cpu: 10m, memory: 32Mi}}
   distributor:
@@ -81,6 +83,9 @@ grafana:
     auth.anonymous:
       enabled: true
       org_role: Admin
+kube-state-metrics:
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}
 prometheus-node-exporter:
   hostNetwork: false
   resources:
