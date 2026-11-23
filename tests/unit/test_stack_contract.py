@@ -253,6 +253,7 @@ class StackContractTests(unittest.TestCase):
         self.assertNotIn("kind load docker-image", text)
         self.assertIn("kind: AppProject", text)
         self.assertIn("type: oci", text)
+        self.assertIn("url: oci://$REGISTRY_HOST/charts/monitoring", text)
         self.assertIn('insecureOCIForceHttp: "true"', text)
         self.assertIn('secret generic argocd-secret', text)
         self.assertIn('server.secretkey="$SERVER_SECRET_KEY"', text)

@@ -151,7 +151,7 @@ metadata:
 stringData:
   type: oci
   name: monitoring-kind
-  url: $REGISTRY_HOST
+  url: oci://$REGISTRY_HOST/charts/monitoring
   enableOCI: "true"
   insecureOCIForceHttp: "true"
 EOF
