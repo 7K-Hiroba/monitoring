@@ -61,6 +61,16 @@ class ObservabilityContractTests(unittest.TestCase):
         self.assertNotIn("permissions", yaml.dump(pack))
         self.assertNotIn("GrafanaFolder", yaml.dump(pack))
 
+    def test_kindless_mimir_probe_mounts_generated_rules_and_checks_evaluation(self):
+        script = (ROOT / "scripts/test-alloy-pipeline.sh").read_text()
+        self.assertIn('f"monitoring-{topology}-rules"', script)
+        self.assertIn("/data/rules", script)
+        self.assertIn("ruler_storage", script)
+        self.assertIn("monitoring:up:sum", script)
+        self.assertIn("anonymous/central.yaml", script)
+        self.assertIn('f"{topology}.yaml"', script)
+        self.assertIn('other = "local" if topology == "central" else "central"', script)
+
 
 if __name__ == "__main__":
     unittest.main()

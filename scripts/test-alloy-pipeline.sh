@@ -19,6 +19,7 @@ PREFIX="monitoring-alloy-$$"
 PYTHON_IMAGE='python@sha256:7fbad8e4652eae0186429a6f26cf5b23e27e8c6fd7ac4d0cfd7a6988cdeea1e1'
 MIMIR_IMAGE='grafana/mimir@sha256:0ed56db7d7713707eff00224ddd4c3096afa6cf1cbe43a6f9391c537f1416099'
 ALLOY_IMAGE='grafana/alloy@sha256:6616111d70b3c75d5aa177e0584a523403eaba0eb3b177cb387302c2206d5221'
+HIROBA_PYTHON=${HIROBA_PYTHON:-python3}
 
 finish() {
   rc=$?
@@ -28,6 +29,7 @@ finish() {
     docker logs "${PREFIX}-mimir" >&2 || true
   fi
   docker rm -f "${PREFIX}-alloy" "${PREFIX}-mimir" "${PREFIX}-metrics" >/dev/null 2>&1 || true
+  docker volume rm "${PREFIX}-rules" "${PREFIX}-ruler" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
@@ -58,7 +60,44 @@ blocks_storage:
     sync_dir: /tmp/mimir/tsdb-sync
   tsdb:
     dir: /tmp/mimir/tsdb
+ruler:
+  rule_path: /data/ruler
+ruler_storage:
+  backend: local
+  local:
+    directory: /data/rules
 EOF
+
+# Exercise Hiroba-owned ConfigMap delivery through Mimir's real filesystem ruler.
+for topology in central local; do
+  helm template monitoring "$ROOT/charts/monitoring" --namespace monitoring \
+    --values "$ROOT/charts/monitoring/ci/$topology-values.yaml" \
+    --set observability.enabled=true --set observability.rules.enabled=true > "$WORK/$topology-full.yaml"
+done
+mkdir -p "$WORK/rules/anonymous"
+"$HIROBA_PYTHON" - "$WORK" <<'PY'
+import sys, yaml
+from pathlib import Path
+work = Path(sys.argv[1])
+for topology in ("central", "local"):
+    documents = list(yaml.safe_load_all((work / f"{topology}-full.yaml").read_text()))
+    expected = f"monitoring-{topology}-rules"
+    other = "local" if topology == "central" else "central"
+    for document in documents:
+        if not isinstance(document, dict) or document.get("kind") != "ConfigMap":
+            continue
+        name = document.get("metadata", {}).get("name")
+        if name == f"monitoring-{other}-rules":
+            raise SystemExit(f"{topology} rendering leaked {other} rules")
+        if name == expected:
+            data = document.get("data") or {}
+            key = f"{topology}.yaml"
+            if set(data) != {key}:
+                raise SystemExit(f"unexpected {expected} keys: {sorted(data)}")
+            if topology == "central":
+                (work / "rules/anonymous/central.yaml").write_text(data[key])
+PY
+test -f "$WORK/rules/anonymous/central.yaml"
 
 docker network create "$NETWORK" >/dev/null
 docker create --name "${PREFIX}-metrics" --network "$NETWORK" --network-alias metrics \
@@ -67,8 +106,11 @@ docker cp "$WORK/input.prom" "${PREFIX}-metrics:/tmp/input.prom"
 docker start "${PREFIX}-metrics" >/dev/null
 docker create --name "${PREFIX}-mimir" --network "$NETWORK" --network-alias mimir \
   --publish 127.0.0.1::9090 \
-  "$MIMIR_IMAGE" -config.file=/tmp/mimir.yaml >/dev/null
+  --volume "${PREFIX}-rules:/data/rules" \
+  --volume "${PREFIX}-ruler:/data/ruler" \
+  "$MIMIR_IMAGE" -config.file=/tmp/mimir.yaml -target=all >/dev/null
 docker cp "$WORK/mimir.yaml" "${PREFIX}-mimir:/tmp/mimir.yaml"
+docker cp "$WORK/rules/." "${PREFIX}-mimir:/data/rules"
 docker start "${PREFIX}-mimir" >/dev/null
 MIMIR_PORT=$(docker port "${PREFIX}-mimir" 9090/tcp | head -1 | awk -F: '{print $NF}')
 [[ "$MIMIR_PORT" =~ ^[0-9]+$ ]]
@@ -137,6 +179,27 @@ if [[ "$MODE" == update ]]; then
   echo "updated $EXPECTED from the real Alloy pipeline"
 else
   diff -u "$EXPECTED" "$ACTUAL"
+fi
+
+RULE_VALUE=""
+for _ in $(seq 1 90); do
+  RULE_RESPONSE=$(curl -fsS --get --data-urlencode 'query=monitoring:up:sum' "http://127.0.0.1:${MIMIR_PORT}/prometheus/api/v1/query" 2>/dev/null || true)
+  if [[ -n "$RULE_RESPONSE" ]] && jq -e '.status == "success" and (.data.result | length) == 1 and ((.data.result[0].value[1] | tonumber) > 0)' >/dev/null 2>&1 <<<"$RULE_RESPONSE"; then
+    RULE_VALUE=$(jq -r '.data.result[0].value[1]' <<<"$RULE_RESPONSE")
+    break
+  fi
+  if [[ "$(docker inspect -f '{{.State.Running}}' "${PREFIX}-mimir" 2>/dev/null || true)" != true ]]; then
+    docker logs "${PREFIX}-mimir" >&2 || true
+    echo "Mimir exited before evaluating the delivered central rule" >&2
+    exit 1
+  fi
+  sleep 2
+done
+if [[ -z "$RULE_VALUE" ]]; then
+  printf 'last recording-rule response: %s\n' "$RULE_RESPONSE" >&2
+  curl -fsS "http://127.0.0.1:${MIMIR_PORT}/prometheus/api/v1/rules" >&2 || true
+  echo "Mimir did not evaluate monitoring:up:sum from the delivered ConfigMap" >&2
+  exit 1
 fi
 
 for rules in "$ROOT"/observability/rules/*.yaml; do

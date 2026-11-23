@@ -1,0 +1,9 @@
+schema: inari.stack-test.v1
+setupProfiles: [kro, argocd, oci-registry]
+covers:
+  - charts/monitoring
+  - packages/monitoring-stack
+  - packages/observability-pack
+install: {script: install.sh, timeout: 15m}
+upgrade: {script: upgrade.sh, timeout: 15m}
+diagnostics: diagnostics.sh

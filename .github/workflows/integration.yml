@@ -7,9 +7,9 @@ on:
 permissions:
   contents: read
 jobs:
-  integration:
+  components:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with: {fetch-depth: 0}
@@ -20,17 +20,22 @@ jobs:
           path: .hiroba/workflows
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with: {python-version: "3.11"}
-      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5
       - run: python -m pip install --requirement .hiroba/workflows/requirements-dev.txt
-      - run: .hiroba/workflows/scripts/install-ci-tools.sh promtool alloy kind
+      - id: tools-key
+        run: echo "key=$(.hiroba/workflows/scripts/install-ci-tools.sh --cache-key promtool alloy helm kubectl)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with: {path: .hiroba-cache, key: "monitoring-components-${{ steps.tools-key.outputs.key }}"}
+      - run: .hiroba/workflows/scripts/install-ci-tools.sh promtool alloy helm kubectl
       - run: python .hiroba/workflows/scripts/prepare-chart.py --chart charts/monitoring
       - run: ./scripts/test-alloy-pipeline.sh --check
       - run: ./tests/grafana/test-provisioning.sh
-      - run: ./tests/kind/test-stack.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:
-          name: full-stack-diagnostics
+          name: component-diagnostics
           path: diagnostics/
           if-no-files-found: ignore
           retention-days: 14
+  integration:
+    uses: 7K-Hiroba/workflows/.github/workflows/test-stack.yml@df9f8cbfc617bf8e8d14e780c6f719cbc110bf58 # v1.1.0
+    with: {root: .}
