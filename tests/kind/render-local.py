@@ -19,7 +19,7 @@ def merge_values(target: dict, overlay: dict) -> None:
             target[key] = value
 
 
-def render(root: Path, work: Path, registry: str, digest: str, control_plane: str) -> None:
+def render(root: Path, work: Path, registry: str, digest: str, control_plane: str, chart_version: str | None = None) -> None:
     if not re.fullmatch(r"[a-z0-9.-]+:[0-9]+", registry):
         raise ValueError("registry must be an in-cluster DNS host and port")
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
@@ -51,6 +51,8 @@ def render(root: Path, work: Path, registry: str, digest: str, control_plane: st
         spec = fixture["spec"]
         spec["namespace"] = f"monitoring-{topology}" if topology != "central" else "monitoring"
         spec["chartDigest"] = digest
+        if chart_version is not None:
+            spec["chartVersion"] = chart_version
         spec["controlPlaneTargets"] = control_plane
         if topology == "client":
             spec["remoteWriteUrl"] = "http://monitoring-mimir-gateway.monitoring.svc:80/api/v1/push"
@@ -65,8 +67,9 @@ def main() -> int:
     parser.add_argument("--registry", required=True)
     parser.add_argument("--digest", required=True)
     parser.add_argument("--control-plane", required=True)
+    parser.add_argument("--chart-version")
     args = parser.parse_args()
-    render(args.root, args.work, args.registry, args.digest, args.control_plane)
+    render(args.root, args.work, args.registry, args.digest, args.control_plane, chart_version=args.chart_version)
     return 0
 
 

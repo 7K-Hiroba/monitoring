@@ -236,16 +236,23 @@ class StackContractTests(unittest.TestCase):
             for topology in ("central", "local", "client"):
                 fixture = self.load((work / f"{topology}.yaml").as_posix())["spec"]
                 self.assertEqual(digest, fixture["chartDigest"])
+                self.assertEqual("0.1.0", fixture["chartVersion"])
                 self.assertEqual("192.0.2.10:6443", fixture["controlPlaneTargets"])
                 self.assertEqual("monitoring" if topology == "central" else f"monitoring-{topology}", fixture["namespace"])
+            module.render(ROOT, work, "registry.registry.svc:5000", digest, "192.0.2.10:6443", chart_version="0.1.0-ci.0")
+            for topology in ("central", "local", "client"):
+                fixture = self.load((work / f"{topology}.yaml").as_posix())["spec"]
+                self.assertEqual("0.1.0-ci.0", fixture["chartVersion"])
             client = self.load((work / "client.yaml").as_posix())["spec"]
             self.assertEqual("http://monitoring-mimir-gateway.monitoring.svc:80/api/v1/push", client["remoteWriteUrl"])
             self.assertEqual("http://monitoring-loki-gateway.monitoring.svc:80/loki/api/v1/push", client["lokiPushUrl"])
         canonical = self.load("packages/monitoring-stack/rgd.yaml")
         self.assertEqual("oci://ghcr.io/7k-hiroba/monitoring/charts/monitoring", canonical["spec"]["resources"][0]["template"]["spec"]["source"]["repoURL"])
 
-    def test_kind_suite_executes_argocd_and_client_stack(self):
+    def test_kind_suite_scopes_install_upgrade_without_functional_e2e(self):
         text = (ROOT / "tests/kind/test-stack.sh").read_text()
+        self.assertEqual(1, text.count("kind create cluster"))
+        self.assertEqual(1, text.count("kind delete cluster"))
         self.assertIn("manifests/core-install.yaml", text)
         self.assertIn("REDIS_IMAGE='redis@sha256:", text)
         self.assertIn('kubectl set image deployment/argocd-redis redis="$REDIS_IMAGE" --namespace argocd', text)
@@ -260,11 +267,22 @@ class StackContractTests(unittest.TestCase):
         self.assertLess(text.index('secret generic argocd-secret'), text.index("kind: AppProject"))
         self.assertIn("name: default", text)
         self.assertLess(text.index("kind: AppProject"), text.index('"$WORK/central.yaml"'))
-        self.assertIn("wait_for_application \"$app\"", text)
-        self.assertIn('test "$(kubectl get application "$app"', text)
+        self.assertIn('local name=$1 expected_digest=$2 expected_version=$3', text)
+        self.assertIn("wait_for_application \"$app\" \"$PREVIOUS_CHART_DIGEST\" \"$PREVIOUS_CHART_VERSION\"", text)
+        self.assertIn("wait_for_application \"$app\" \"$CHART_DIGEST\" \"$CHART_VERSION\"", text)
+        self.assertIn('wait_for_stack "${app#monitoring-}"', text)
+        self.assertIn("PREVIOUS_CHART_VERSION", text)
+        self.assertIn("PREVIOUS_CHART_DIGEST", text)
+        self.assertIn('helm package "$ROOT/charts/monitoring" --version "$version"', text)
+        self.assertIn('push_chart_version "$PREVIOUS_CHART_VERSION"', text)
+        self.assertLess(text.index('--chart-version "$PREVIOUS_CHART_VERSION"'), text.index('INGESTER_PVC_UID='))
+        self.assertLess(text.index('INGESTER_PVC_UID='), text.index('--chart-version "$CHART_VERSION"'))
+        self.assertIn("CLIENT_REMOTE_WRITE", text)
+        self.assertIn('test "$(kubectl get pvc "$INGESTER_PVC"', text)
         self.assertIn("deployment/monitoring-client-kube-state-metrics", text)
         self.assertIn("daemonset/monitoring-client-alloy", text)
-        self.assertIn('query=up{cluster="monitoring-client"}', text)
+        for functional in ("/prometheus/api/v1/query", "/prometheus/api/v1/rules", "/loki/api/v1/labels", "/alertmanager/api/v2/status", "/api/dashboards/uid"):
+            self.assertNotIn(functional, text)
         self.assertNotIn('helm upgrade --install "$release"', text)
 
     def test_workflow_callers_use_the_approved_immutable_release(self):

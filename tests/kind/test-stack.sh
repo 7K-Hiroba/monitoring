@@ -31,14 +31,27 @@ finish() {
 trap finish EXIT
 
 wait_for_application() {
-  local name=$1 health sync
+  local name=$1 expected_digest=$2 expected_version=$3 health sync digest version
   for _ in $(seq 1 360); do
     health=$(kubectl get application "$name" -n argocd -o jsonpath='{.status.health.status}' 2>/dev/null || true)
     sync=$(kubectl get application "$name" -n argocd -o jsonpath='{.status.sync.status}' 2>/dev/null || true)
-    if [[ "$health" == Healthy && "$sync" == Synced ]]; then return 0; fi
+    digest=$(kubectl get application "$name" -n argocd -o jsonpath='{.spec.source.targetRevision}' 2>/dev/null || true)
+    version=$(kubectl get application "$name" -n argocd -o jsonpath='{.metadata.annotations.inari\.dev/chart-version}' 2>/dev/null || true)
+    if [[ "$health" == Healthy && "$sync" == Synced && "$digest" == "$expected_digest" && "$version" == "$expected_version" ]]; then return 0; fi
     sleep 2
   done
   kubectl get application "$name" -n argocd -o yaml || true
+  return 1
+}
+
+wait_for_stack() {
+  local topology=$1 ready
+  for _ in $(seq 1 60); do
+    ready=$(kubectl get monitoringstack "$topology" -n default -o jsonpath='{.status.ready}' 2>/dev/null || true)
+    if [[ "$ready" == true ]]; then return 0; fi
+    sleep 2
+  done
+  kubectl get monitoringstack "$topology" -n default -o yaml || true
   return 1
 }
 
@@ -88,18 +101,34 @@ for _ in $(seq 1 30); do
 done
 curl -fsS "http://127.0.0.1:${REGISTRY_PORT}/v2/" >/dev/null
 
+push_chart_version() {
+  local version=$1 destination=$2 digest
+  mkdir -p "$destination"
+  helm package "$ROOT/charts/monitoring" --version "$version" --destination "$destination"
+  helm push --plain-http "$destination/monitoring-${version}.tgz" "oci://127.0.0.1:${REGISTRY_PORT}/charts"
+  digest=$(curl -fsSI -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+    "http://127.0.0.1:${REGISTRY_PORT}/v2/charts/monitoring/manifests/${version}" | \
+    tr -d '\r' | awk 'tolower($1) == "docker-content-digest:" {print $2}')
+  [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+  PUSHED_DIGEST=$digest
+}
+
 CHART_VERSION=$(helm show chart "$ROOT/charts/monitoring" | awk '/^version:/ {print $2}')
 [[ "$CHART_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-helm package "$ROOT/charts/monitoring" --destination "$WORK"
-helm push --plain-http "$WORK/monitoring-${CHART_VERSION}.tgz" "oci://127.0.0.1:${REGISTRY_PORT}/charts"
-CHART_DIGEST=$(curl -fsSI -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
-  "http://127.0.0.1:${REGISTRY_PORT}/v2/charts/monitoring/manifests/${CHART_VERSION}" | \
-  tr -d '\r' | awk 'tolower($1) == "docker-content-digest:" {print $2}')
-[[ "$CHART_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+# This repository has no earlier released chart to use as a fixture. Package
+# the same compatible chart with prerelease metadata for a CI-only previous
+# version, then move to the current version through the real KRO/ArgoCD path.
+PREVIOUS_CHART_VERSION="${CHART_VERSION}-ci.0"
+push_chart_version "$PREVIOUS_CHART_VERSION" "$WORK/previous"
+PREVIOUS_CHART_DIGEST=$PUSHED_DIGEST
+push_chart_version "$CHART_VERSION" "$WORK/current"
+CHART_DIGEST=$PUSHED_DIGEST
+[[ "$PREVIOUS_CHART_DIGEST" != "$CHART_DIGEST" ]]
 CONTROL_PLANE_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${CLUSTER}-control-plane")
 [[ -n "$CONTROL_PLANE_IP" ]]
 ${HIROBA_PYTHON:-python3} "$ROOT/tests/kind/render-local.py" --root "$ROOT" --work "$WORK" \
-  --registry "$REGISTRY_HOST" --digest "$CHART_DIGEST" --control-plane "${CONTROL_PLANE_IP}:6443"
+  --registry "$REGISTRY_HOST" --digest "$PREVIOUS_CHART_DIGEST" --chart-version "$PREVIOUS_CHART_VERSION" \
+  --control-plane "${CONTROL_PLANE_IP}:6443"
 
 helm upgrade --install kro oci://registry.k8s.io/kro/charts/kro \
   --namespace kro-system --create-namespace --version 0.6.1 --wait --timeout 180s
@@ -161,9 +190,12 @@ kubectl apply -f "$WORK/rgd.yaml"
 kubectl wait --for=condition=Ready rgd/monitoring-stack --timeout=120s
 kubectl apply -f "$WORK/central.yaml" -f "$WORK/local.yaml" -f "$WORK/client.yaml"
 for app in monitoring-central monitoring-local monitoring-client; do
-  wait_for_application "$app"
-  test "$(kubectl get application "$app" -n argocd -o jsonpath='{.spec.source.targetRevision}')" = "$CHART_DIGEST"
+  wait_for_application "$app" "$PREVIOUS_CHART_DIGEST" "$PREVIOUS_CHART_VERSION"
+  test "$(kubectl get application "$app" -n argocd -o jsonpath='{.spec.source.targetRevision}')" = "$PREVIOUS_CHART_DIGEST"
   test "$(kubectl get application "$app" -n argocd -o jsonpath='{.spec.source.repoURL}')" = "oci://${REGISTRY_HOST}/charts/monitoring"
+  test "$(kubectl get application "$app" -n argocd -o jsonpath='{.spec.source.path}')" = "."
+  test "$(kubectl get application "$app" -n argocd -o jsonpath='{.metadata.annotations.inari\.dev/chart-version}')" = "$PREVIOUS_CHART_VERSION"
+  wait_for_stack "${app#monitoring-}"
 done
 for namespace in monitoring monitoring-local monitoring-client; do
   kubectl rollout status deployment --all -n "$namespace" --timeout=300s
@@ -212,44 +244,34 @@ if kubectl get configmap/monitoring-central-rules -n monitoring-local >/dev/null
   exit 1
 fi
 
-kubectl port-forward svc/monitoring-mimir-gateway -n monitoring 18080:80 >/tmp/${CLUSTER}-mimir-pf.log 2>&1 & PF_PIDS+=("$!")
-kubectl port-forward svc/monitoring-local-mimir-gateway -n monitoring-local 18081:80 >/tmp/${CLUSTER}-local-mimir-pf.log 2>&1 & PF_PIDS+=("$!")
-kubectl port-forward svc/monitoring-loki-gateway -n monitoring 18082:80 >/tmp/${CLUSTER}-loki-pf.log 2>&1 & PF_PIDS+=("$!")
-kubectl port-forward svc/monitoring-local-loki-gateway -n monitoring-local 18083:80 >/tmp/${CLUSTER}-local-loki-pf.log 2>&1 & PF_PIDS+=("$!")
-kubectl port-forward svc/monitoring-mimir-alertmanager -n monitoring 18084:8080 >/tmp/${CLUSTER}-alertmanager-pf.log 2>&1 & PF_PIDS+=("$!")
-kubectl port-forward svc/monitoring-local-mimir-alertmanager -n monitoring-local 18085:8080 >/tmp/${CLUSTER}-local-alertmanager-pf.log 2>&1 & PF_PIDS+=("$!")
-kubectl port-forward svc/monitoring-grafana -n monitoring 18086:80 >/tmp/${CLUSTER}-grafana-pf.log 2>&1 & PF_PIDS+=("$!")
-kubectl port-forward svc/monitoring-local-grafana -n monitoring-local 18087:80 >/tmp/${CLUSTER}-local-grafana-pf.log 2>&1 & PF_PIDS+=("$!")
-sleep 3
+# Record intended configuration and durable object identity before the upgrade.
+INGESTER_PVC=storage-monitoring-central-mimir-ingester-0
+INGESTER_PVC_UID=$(kubectl get pvc "$INGESTER_PVC" -n monitoring -o jsonpath='{.metadata.uid}')
+[[ -n "$INGESTER_PVC_UID" ]]
+CLIENT_REMOTE_WRITE=$(kubectl get application monitoring-client -n argocd -o jsonpath='{.spec.source.helm.valuesObject.global.telemetry.remoteWriteUrl}')
+CLIENT_LOKI_PUSH=$(kubectl get application monitoring-client -n argocd -o jsonpath='{.spec.source.helm.valuesObject.global.telemetry.lokiPushUrl}')
 
-for port in 18080 18081; do
-  group=monitoring-central
-  if [[ "$port" == 18081 ]]; then group=monitoring-client; fi
-  RULES=""
-  for _ in $(seq 1 120); do
-    RULES=$(curl -fsS "http://127.0.0.1:${port}/prometheus/api/v1/rules" 2>/dev/null || true)
-    if jq -e --arg group "$group" '.data.groups[] | select(.name == $group) and (.rules | length > 0) and (.lastEvaluation | length > 0) and all(.rules[]; .health == "ok" and ((.lastError // "") == ""))' >/dev/null 2>&1 <<<"$RULES"; then break; fi
-    sleep 2
-  done
-  jq -e --arg group "$group" '.data.groups[] | select(.name == $group) and (.rules | length > 0) and (.lastEvaluation | length > 0) and all(.rules[]; .health == "ok" and ((.lastError // "") == ""))' <<<"$RULES" >/dev/null
-  curl -fsS --get --data-urlencode 'query=up' "http://127.0.0.1:${port}/prometheus/api/v1/query" | jq -e '.status == "success" and (.data.result | length > 0)' >/dev/null
+# Upgrade in the same cluster by changing only the exact desired artifact and
+# compatible version evidence. No direct Helm install/upgrade bypass is used.
+${HIROBA_PYTHON:-python3} "$ROOT/tests/kind/render-local.py" --root "$ROOT" --work "$WORK" \
+  --registry "$REGISTRY_HOST" --digest "$CHART_DIGEST" --chart-version "$CHART_VERSION" \
+  --control-plane "${CONTROL_PLANE_IP}:6443"
+kubectl apply -f "$WORK/central.yaml" -f "$WORK/local.yaml" -f "$WORK/client.yaml"
+for app in monitoring-central monitoring-local monitoring-client; do
+  wait_for_application "$app" "$CHART_DIGEST" "$CHART_VERSION"
+  test "$(kubectl get application "$app" -n argocd -o jsonpath='{.spec.source.targetRevision}')" = "$CHART_DIGEST"
+  test "$(kubectl get application "$app" -n argocd -o jsonpath='{.metadata.annotations.inari\.dev/chart-version}')" = "$CHART_VERSION"
+  test "$(kubectl get application "$app" -n argocd -o jsonpath='{.spec.source.helm.valuesObject.global.telemetry.org}')" = ci
+  wait_for_stack "${app#monitoring-}"
 done
-CLIENT_SERIES=""
-for _ in $(seq 1 60); do
-  CLIENT_SERIES=$(curl -fsS --get --data-urlencode 'query=up{cluster="monitoring-client"}' "http://127.0.0.1:18080/prometheus/api/v1/query" 2>/dev/null || true)
-  if jq -e '.status == "success" and (.data.result | length > 0)' >/dev/null 2>&1 <<<"$CLIENT_SERIES"; then break; fi
-  sleep 2
-done
-jq -e '.status == "success" and (.data.result | length > 0)' <<<"$CLIENT_SERIES" >/dev/null
-for port in 18082 18083; do
-  curl -fsS "http://127.0.0.1:${port}/loki/api/v1/labels" | jq -e '.status == "success"' >/dev/null
-done
-for port in 18084 18085; do
-  curl -fsS "http://127.0.0.1:${port}/alertmanager/api/v2/status" | jq -e '.cluster' >/dev/null
-done
-for port in 18086 18087; do
-  curl -fsS "http://127.0.0.1:${port}/api/dashboards/uid/monitoring-overview" | \
-    jq -e '.dashboard.uid == "monitoring-overview" and .meta.folderTitle == "monitoring" and (.meta.folderUid | length > 0)' >/dev/null
+for namespace in monitoring monitoring-local monitoring-client; do
+  kubectl rollout status deployment --all -n "$namespace" --timeout=300s
+  kubectl rollout status statefulset --all -n "$namespace" --timeout=300s
+  kubectl rollout status daemonset --all -n "$namespace" --timeout=300s
 done
 
-echo "KRO/ArgoCD central/local/client stacks, client telemetry, Mimir rules, Alertmanager, Loki, and Grafana: OK"
+test "$(kubectl get pvc "$INGESTER_PVC" -n monitoring -o jsonpath='{.metadata.uid}')" = "$INGESTER_PVC_UID"
+test "$(kubectl get application monitoring-client -n argocd -o jsonpath='{.spec.source.helm.valuesObject.global.telemetry.remoteWriteUrl}')" = "$CLIENT_REMOTE_WRITE"
+test "$(kubectl get application monitoring-client -n argocd -o jsonpath='{.spec.source.helm.valuesObject.global.telemetry.lokiPushUrl}')" = "$CLIENT_LOKI_PUSH"
+
+echo "KRO/ArgoCD central/local/client install and exact-digest upgrade converged with preserved configuration/state: OK"
