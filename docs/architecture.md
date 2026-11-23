@@ -18,6 +18,10 @@ Alertmanager runs as the pinned Mimir chart's managed component. Loki provides l
 
 Inari-managed charts disable chart-native observability when using a companion. Existing catalog admission, resource-target resolver, DeploymentPlan, source-agnostic renderer, and generic verification services own their respective seams. No component in this repository implements a replacement renderer or hub-originated Grafana call.
 
+## Testing boundary
+
+Monitoring is explicitly `archetype: stack` under app config v2. The shared workflow owns central setup pins, exact-content caching, one fresh kind cluster, install+upgrade sequencing, diagnostics, cleanup, and source-bound evidence. `tests/stack` retains the real KRO/ArgoCD/OCI central/local/client and pack wiring, exact-digest upgrade, and preserved PVC/org/client endpoint assertions. Alloy/post-label, targeted Mimir filesystem-ruler delivery, Grafana provisioning, and readiness adapters remain kind-less suites. Install/upgrade evidence is neither upstream functional E2E nor deployed production readiness.
+
 ## Readiness and access boundary
 
 The signed read-only Argo suite checks folder, dashboard, datasource, panel-query, and selected Mimir rule-group evidence. It does not install another copy, provision Grafana identities, synchronize teams, map principals, or assert folder ACLs. Existing Inari organization/target grants and generic verification RBAC/egress controls remain separate and authoritative. Links appear only after current, unexpired, fully bound evidence reaches the existing outbound verification path.

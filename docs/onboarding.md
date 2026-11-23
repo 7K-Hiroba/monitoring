@@ -1,6 +1,6 @@
 # Target onboarding
 
-1. Create the stack through the KRO RGD and reviewed ArgoCD GitOps path using an exact chart version/digest. Select `central`, `local`, or `client`; never use a mutable channel.
+1. Preserve `archetype: stack`, complete `tests/stack` coverage, and an exact-head hosted install+upgrade result before onboarding. Create the stack through the KRO RGD and reviewed ArgoCD GitOps path using an exact chart version/digest. Select `central`, `local`, or `client`; never use a mutable channel.
 2. Verify Mimir, Alertmanager, Grafana, Loki, and client collectors required by that topology are healthy. Client targets need explicit central Mimir/Loki endpoints and platform-approved network policy.
 3. Register or adopt `monitoring.grafana` through the existing resource-target API. Use either the existing concrete Helm-addon evidence or `instanceId` plus the expected source-qualified catalog item for a running, synced, digest-bound KRO instance.
 4. Configure HTTPS base URL, central/local evaluation, folder prefixes, datasource allowlists, approval teams, and one provider default only when policy allows. Existing Inari `view` and `provision` grants control visibility and submission and are rechecked at submit time.

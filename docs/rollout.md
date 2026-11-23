@@ -1,6 +1,6 @@
 # Rollout plan
 
-1. Land reviewed chart/RGD/pack/contracts and the coordinated API/server consumers. Do not create tags, releases, stable channels, or GHCR artifacts from an ordinary Work/PR run.
+1. Land reviewed chart/RGD/pack/contracts and the coordinated API/server consumers only after exact-head hosted stack-lifecycle and kind-less component evidence passes. Do not create tags, releases, stable channels, or GHCR artifacts from an ordinary Work/PR run. The stack lane proves install/upgrade convergence, not deployed readiness.
 2. After an explicitly approved release, verify exact OCI digests, cosign publisher identity, SLSA provenance, and signed test evidence. Record the chart, stack package, observability pack, and suite identities.
 3. Use a non-production staged or canary target. Deploy central/local/client topology through the KRO/RGD → reviewed baseline PR → ArgoCD path, with platform CODEOWNERS, policy/resource limits, and target grants. The renderer/multi-repo Phase 3 gate must be independently confirmed first.
 4. Verify Mimir, Alertmanager, Grafana, Loki, Alloy, kube-state-metrics, node-exporter, kubelet, and configured control-plane coverage. Confirm no Prometheus server is installed.

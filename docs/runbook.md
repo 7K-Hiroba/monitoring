@@ -9,6 +9,10 @@
 - Alloy/client collectors: inspect scrape/remote-write/Loki delivery, service discovery, and read-only RBAC for nodes, kubelet, kube-state-metrics, node-exporter, workloads, and configured control-plane targets.
 - KRO/ArgoCD: inspect RGD conditions, generated Application source digest, policy denial, sync health, and resource limits. Application health alone is not observability readiness.
 
+## CI lifecycle failures
+
+For stack-lifecycle failures, download the exact run/attempt evidence and diagnostics, identify setup/install/upgrade timing, and preserve the consumer source/workflow SHAs. A warm tool cache must still show one fresh cluster and cleanup. Never attach an existing cluster, change host sysctls, or treat convergence as deployed functional readiness.
+
 ## Changes and recovery
 
 Make upgrades, storage changes, rule changes, and recovery through reviewed GitOps pull requests with exact chart/package/suite pins. Roll back by reverting to a previously reviewed compatible desired state; there is no verification-driven automatic rollback. Preserve Mimir/Loki data and object-store retention before any destructive action, which needs a separate change approval.
