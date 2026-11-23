@@ -149,7 +149,7 @@ metadata:
   labels:
     argocd.argoproj.io/secret-type: repository
 stringData:
-  type: helm
+  type: oci
   name: monitoring-kind
   url: $REGISTRY_HOST
   enableOCI: "true"

@@ -252,6 +252,8 @@ class StackContractTests(unittest.TestCase):
         self.assertLess(text.index("manifests/core-install.yaml"), text.index('kubectl set image deployment/argocd-redis redis="$REDIS_IMAGE"'))
         self.assertNotIn("kind load docker-image", text)
         self.assertIn("kind: AppProject", text)
+        self.assertIn("type: oci", text)
+        self.assertIn('insecureOCIForceHttp: "true"', text)
         self.assertIn('secret generic argocd-secret', text)
         self.assertIn('server.secretkey="$SERVER_SECRET_KEY"', text)
         self.assertLess(text.index('secret generic argocd-secret'), text.index("kind: AppProject"))
