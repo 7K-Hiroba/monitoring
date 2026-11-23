@@ -35,7 +35,7 @@ def render(root: Path, work: Path, registry: str, digest: str, control_plane: st
     values["global"]["collectors"]["kubelet"]["insecureSkipVerify"] = True
     values["global"]["collectors"]["controlPlane"]["insecureSkipVerify"] = True
     kind_values = yaml.safe_load((root / "charts/monitoring/ci/kind-values.yaml").read_text())
-    for component in ("mimir-distributed", "loki"):
+    for component in ("mimir-distributed", "loki", "prometheus-node-exporter"):
         merge_values(values.setdefault(component, {}), kind_values[component])
     # Anonymous admin is confined to this disposable kind fixture. The signed
     # chart/RGD never enables it for a real target.

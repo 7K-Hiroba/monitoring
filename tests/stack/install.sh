@@ -49,10 +49,11 @@ EOF
 kubectl apply -f "$WORK/argocd-repository.yaml"
 kubectl apply -f "$WORK/rgd.yaml"
 kubectl wait --for=condition=Ready rgd/monitoring-stack --timeout=120s
-kubectl apply -f "$WORK/central.yaml" -f "$WORK/local.yaml" -f "$WORK/client.yaml"
-for app in monitoring-central monitoring-local monitoring-client; do
+for topology in central local client; do
+  kubectl apply -f "$WORK/$topology.yaml"
+  app="monitoring-$topology"
   wait_for_application "$app" "$PREVIOUS_CHART_DIGEST" "$PREVIOUS_CHART_VERSION"
-  wait_for_stack "${app#monitoring-}"
+  wait_for_stack "$topology"
 done
 assert_stack_rollouts
 kubectl get deployment/monitoring-client-kube-state-metrics -n monitoring-client >/dev/null

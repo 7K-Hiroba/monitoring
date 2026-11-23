@@ -81,6 +81,10 @@ grafana:
     auth.anonymous:
       enabled: true
       org_role: Admin
+prometheus-node-exporter:
+  hostNetwork: false
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}
 observability:
   enabled: true
   rules:

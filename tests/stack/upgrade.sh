@@ -12,11 +12,12 @@ CONTROL_PLANE_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAd
 ${HIROBA_PYTHON:-python3} "$ROOT/tests/stack/render-local.py" --root "$ROOT" --work "$WORK" \
   --registry "$REGISTRY_HOST" --digest "$CHART_DIGEST" --chart-version "$CHART_VERSION" \
   --control-plane "${CONTROL_PLANE_IP}:6443"
-kubectl apply -f "$WORK/central.yaml" -f "$WORK/local.yaml" -f "$WORK/client.yaml"
-for app in monitoring-central monitoring-local monitoring-client; do
+for topology in central local client; do
+  kubectl apply -f "$WORK/$topology.yaml"
+  app="monitoring-$topology"
   wait_for_application "$app" "$CHART_DIGEST" "$CHART_VERSION"
   test "$(kubectl get application "$app" -n argocd -o jsonpath='{.spec.source.helm.valuesObject.global.telemetry.org}')" = ci
-  wait_for_stack "${app#monitoring-}"
+  wait_for_stack "$topology"
 done
 assert_stack_rollouts
 assert_observability_pack

@@ -227,6 +227,8 @@ class StackContractTests(unittest.TestCase):
             self.assertEqual("oci://registry.registry.svc:5000/charts/monitoring", source["repoURL"])
             self.assertEqual("${schema.spec.chartDigest}", source["targetRevision"])
             values = source["helm"]["valuesObject"]
+            self.assertFalse(values["prometheus-node-exporter"]["hostNetwork"])
+            self.assertEqual("10m", values["prometheus-node-exporter"]["resources"]["requests"]["cpu"])
             self.assertTrue(values["global"]["collectors"]["kubelet"]["insecureSkipVerify"])
             self.assertTrue(values["global"]["collectors"]["controlPlane"]["insecureSkipVerify"])
             self.assertEqual("10m", values["mimir-distributed"]["ingester"]["resources"]["requests"]["cpu"])
@@ -271,6 +273,8 @@ class StackContractTests(unittest.TestCase):
                 self.assertNotIn(functional, text)
         self.assertIn("PREVIOUS_CHART_VERSION", install)
         self.assertIn("prepare-chart.py", install)
+        for text in (install, upgrade):
+            self.assertIn("for topology in central local client; do", text)
         self.assertIn("PREVIOUS_CHART_DIGEST", install)
         self.assertIn("INGESTER_PVC_UID", install)
         self.assertIn("CLIENT_REMOTE_WRITE", install)
