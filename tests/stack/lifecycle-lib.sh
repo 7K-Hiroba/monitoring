@@ -46,9 +46,11 @@ push_chart_version() {
 
 assert_stack_rollouts() {
   for namespace in monitoring monitoring-local monitoring-client; do
-    kubectl rollout status deployment --all -n "$namespace" --timeout=300s
-    kubectl rollout status statefulset --all -n "$namespace" --timeout=300s
-    kubectl rollout status daemonset --all -n "$namespace" --timeout=300s
+    for kind in deployment statefulset daemonset; do
+      for resource in $(kubectl get "$kind" -n "$namespace" -o name); do
+        kubectl rollout status "$resource" -n "$namespace" --timeout=300s
+      done
+    done
   done
 }
 

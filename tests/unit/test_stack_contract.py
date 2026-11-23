@@ -278,6 +278,12 @@ class StackContractTests(unittest.TestCase):
             for functional in ("/prometheus/api/v1/query", "/prometheus/api/v1/rules", "/loki/api/v1/labels", "/alertmanager/api/v2/status", "/api/dashboards/uid"):
                 self.assertNotIn(functional, text)
         self.assertIn("PREVIOUS_CHART_VERSION", install)
+        self.assertNotIn("rollout status deployment --all", lifecycle)
+        self.assertNotIn("rollout status statefulset --all", lifecycle)
+        self.assertNotIn("rollout status daemonset --all", lifecycle)
+        self.assertIn("for kind in deployment statefulset daemonset; do", lifecycle)
+        self.assertIn('kubectl get "$kind" -n "$namespace" -o name', lifecycle)
+        self.assertIn('kubectl rollout status "$resource" -n "$namespace" --timeout=300s', lifecycle)
         self.assertIn("prepare-chart.py", install)
         for text in (install, upgrade):
             self.assertIn("for topology in central local client; do", text)
