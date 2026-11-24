@@ -1,0 +1,23 @@
+topology: client
+components:
+  mimir: false
+  alertmanager: false
+  grafana: false
+  loki: false
+  alloy: true
+  kubeStateMetrics: true
+  nodeExporter: true
+global:
+  topology: client
+  telemetry:
+    org: ci
+    remoteWriteUrl: http://mimir-central.observability.svc:80/api/v1/push
+    lokiPushUrl: http://loki-central.observability.svc:80/loki/api/v1/push
+  collectors:
+    kubelet:
+      enabled: true
+      insecureSkipVerify: true
+    controlPlane:
+      enabled: true
+      insecureSkipVerify: true
+      targets: []

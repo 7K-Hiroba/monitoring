@@ -1,0 +1,222 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: monitoring-observability-readiness
+  labels:
+    inari.dev/smoke-target: monitoring
+    inari.dev/suite-schema: inari.smoke.v1
+spec:
+  entrypoint: verify
+  activeDeadlineSeconds: 600
+  ttlStrategy:
+    secondsAfterCompletion: 3600
+    secondsAfterFailure: 3600
+  arguments:
+    parameters:
+      - name: context
+        default: ""
+        description: Platform-rendered inari.observability.params.v1 context; endpoints and all identities are server/target-bound.
+  templates:
+    - name: verify
+      inputs:
+        parameters:
+          - name: context
+      outputs:
+        parameters:
+          - name: inari-verification-outcome
+            valueFrom: {path: /tmp/outcome.json}
+      container:
+        name: verify
+        image: python@sha256:7fbad8e4652eae0186429a6f26cf5b23e27e8c6fd7ac4d0cfd7a6988cdeea1e1
+        imagePullPolicy: IfNotPresent
+        command: [python, -c]
+        args:
+          - |
+            import datetime
+            import json
+            import os
+            import sys
+            import urllib.parse
+            import urllib.request
+
+            ALLOW_PLAINTEXT = False
+
+            class RejectRedirects(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, request, fp, code, msg, headers, newurl):
+                    return None
+
+            OPENER = urllib.request.build_opener(RejectRedirects)
+
+            def get(base, path, token="", tenant=""):
+                if not isinstance(base, str):
+                    raise ValueError("invalid endpoint")
+                parsed = urllib.parse.urlsplit(base)
+                if parsed.scheme not in ("https", "http") or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+                    raise ValueError("invalid endpoint")
+                if parsed.scheme != "https" and not ALLOW_PLAINTEXT:
+                    raise ValueError("plaintext endpoints are permitted only in ci")
+                headers = {"Accept": "application/json"}
+                if token:
+                    headers["Authorization"] = "Bearer " + token
+                if tenant:
+                    headers["X-Scope-OrgID"] = tenant
+                request = urllib.request.Request(base.rstrip("/") + path, headers=headers, method="GET")
+                with OPENER.open(request, timeout=15) as response:
+                    if response.status != 200:
+                        raise ValueError("readiness endpoint failed")
+                    return json.load(response)
+
+            def finish(context, result, checks):
+                now = datetime.datetime.now(datetime.timezone.utc)
+                context["run"]["finishedAt"] = now.isoformat().replace("+00:00", "Z")
+                context["expiresAt"] = (now + datetime.timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+                outcome = dict(context)
+                outcome["apiVersion"] = "inari.dev/v1alpha1"
+                outcome["kind"] = "ObservabilityVerificationResult"
+                outcome["result"] = result
+                outcome["checks"] = checks
+                with open("/tmp/outcome.json", "w") as output:
+                    json.dump(outcome, output, separators=(",", ":"), sort_keys=True)
+                if result != "passed":
+                    sys.exit(1)
+
+            def require_success(payload, description):
+                if not isinstance(payload, dict) or payload.get("status") != "success":
+                    raise ValueError(description + " did not return a successful result")
+
+            def iter_panels(panels):
+                for panel in panels:
+                    if not isinstance(panel, dict):
+                        raise ValueError("invalid dashboard panel")
+                    yield panel
+                    nested = panel.get("panels", [])
+                    if nested:
+                        yield from iter_panels(nested)
+
+            def resolve_datasource_uid(reference, variables, datasources):
+                if reference is None:
+                    defaults = [item for item in datasources if item.get("isDefault") is True]
+                    if len(defaults) != 1:
+                        raise ValueError("panel requires exactly one default datasource")
+                    return defaults[0].get("uid", "")
+                if isinstance(reference, dict):
+                    value = reference.get("uid", "")
+                elif isinstance(reference, str):
+                    value = reference
+                else:
+                    raise ValueError("invalid panel datasource")
+                variable_name = ""
+                if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
+                    variable_name = value[2:-1]
+                elif isinstance(value, str) and value.startswith("$"):
+                    variable_name = value[1:]
+                if variable_name:
+                    variable = variables.get(variable_name)
+                    if not isinstance(variable, dict) or variable.get("type") != "datasource":
+                        raise ValueError("unknown panel datasource variable")
+                    value = variable.get("current", {}).get("value", "")
+                    if isinstance(value, list):
+                        if len(value) != 1:
+                            raise ValueError("panel datasource variable must resolve to one value")
+                        value = value[0]
+                if not isinstance(value, str) or not value:
+                    raise ValueError("panel datasource is unresolved")
+                matches = [item for item in datasources if value in (item.get("uid"), item.get("name"))]
+                if len(matches) != 1:
+                    raise ValueError("panel datasource is ambiguous or missing")
+                return matches[0].get("uid", "")
+
+            def verify(context, token):
+                grafana = context["grafanaBaseUrl"]
+                metrics = context["metricsBaseUrl"]
+                logs = context.get("logsBaseUrl", "")
+                checks = {}
+                folders = get(grafana, "/api/folders", token)
+                folder = next(item for item in folders if item.get("title") == context["folder"])
+                checks["folder"] = {"state": "passed", "name": context["folder"], "uid": folder["uid"]}
+
+                datasources = get(grafana, "/api/datasources", token)
+                checks["datasources"] = []
+                for declared in context["datasources"]:
+                    matches = [item for item in datasources if item.get("name") == declared["name"]]
+                    if len(matches) != 1:
+                        raise ValueError("selected datasource is ambiguous or missing")
+                    datasource = matches[0]
+                    if datasource.get("type") != declared["type"] or datasource.get("uid") != context["datasource"]:
+                        raise ValueError("datasource identity or type mismatch")
+                    checks["datasources"].append({"state": "passed", "logical": declared["logical"], "name": declared["name"], "type": declared["type"]})
+
+                checks["dashboards"] = []
+                for declared in context["dashboards"]:
+                    document = get(grafana, "/api/dashboards/uid/" + declared["uid"], token)
+                    dashboard = document["dashboard"]
+                    if dashboard["title"] != declared["title"] or document["meta"].get("folderUid") != folder["uid"]:
+                        raise ValueError("dashboard mismatch")
+                    variables = {
+                        item.get("name"): item
+                        for item in dashboard.get("templating", {}).get("list", [])
+                        if isinstance(item, dict) and item.get("name")
+                    }
+                    for panel in iter_panels(dashboard.get("panels", [])):
+                        for target in panel.get("targets", []):
+                            expression = target.get("expr", "")
+                            if not expression:
+                                continue
+                            reference = target.get("datasource")
+                            if reference is None:
+                                reference = panel.get("datasource")
+                            if resolve_datasource_uid(reference, variables, datasources) != context["datasource"]:
+                                raise ValueError("panel datasource is outside the approved selection")
+                            query = get(grafana, "/api/datasources/proxy/uid/" + context["datasource"] + "/api/v1/query?" + urllib.parse.urlencode({"query": expression}), token)
+                            require_success(query, "panel query")
+                    slug = document["meta"].get("url", "").rstrip("/").split("/")[-1]
+                    if not slug:
+                        raise ValueError("dashboard slug missing")
+                    checks["dashboards"].append({"state": "passed", "uid": declared["uid"], "title": declared["title"], "slug": slug})
+
+                rules_response = get(metrics, "/prometheus/api/v1/rules")
+                require_success(rules_response, "rule query")
+                groups = rules_response.get("data", {}).get("groups", [])
+                checks["rules"] = []
+                for declared in context["ruleGroups"]:
+                    group = next(item for item in groups if item.get("name") == declared["group"])
+                    if not group.get("lastEvaluation") or not group.get("rules"):
+                        raise ValueError("rule group has not evaluated")
+                    for rule in group["rules"]:
+                        if rule.get("health") != "ok" or rule.get("lastError"):
+                            raise ValueError("rule evaluation failed")
+                    checks["rules"].append({"state": "passed", "file": declared["file"], "evaluation": declared["evaluation"]})
+                if logs:
+                    require_success(get(logs, "/loki/api/v1/labels", tenant=context["org"]), "Loki label query")
+                return checks
+
+            def main():
+                global ALLOW_PLAINTEXT
+                context = json.loads(os.environ["OBSERVABILITY_INPUT"])
+                ALLOW_PLAINTEXT = context["suite"]["profile"] == "ci"
+                try:
+                    checks = verify(context, os.environ.get("GRAFANA_TOKEN", ""))
+                    finish(context, "passed", checks)
+                except Exception as error:
+                    print(f"readiness verification failed: {type(error).__name__}: {error}", file=sys.stderr)
+                    finish(context, "failed", {})
+
+            if __name__ == "__main__":
+                main()
+        env:
+          - name: OBSERVABILITY_INPUT
+            value: "{{inputs.parameters.context}}"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+          seccompProfile: {type: RuntimeDefault}
+        volumeMounts:
+          - name: output
+            mountPath: /tmp
+      volumes:
+        - name: output
+          emptyDir: {}

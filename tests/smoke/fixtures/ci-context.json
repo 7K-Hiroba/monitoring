@@ -1,0 +1,30 @@
+{
+  "companion": {"id": "ci-companion", "generation": 1},
+  "target": {"id": "ci-target", "revision": 1, "clusterId": "kind-ci"},
+  "org": "ci",
+  "app": {
+    "planId": "ci-plan",
+    "instanceId": "ci-instance",
+    "sourceDigest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "revision": "0.1.0@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
+  "pack": {
+    "itemId": "hiroba/observability-pack",
+    "version": "0.1.0",
+    "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
+  "capabilityDigest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "suite": {"digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "profile": "ci"},
+  "run": {"id": "ci-run", "attempt": 1, "finishedAt": "2026-11-22T00:00:00Z"},
+  "grafanaBaseUrl": "http://monitoring-grafana.default.svc",
+  "metricsBaseUrl": "http://monitoring-mimir-gateway.default.svc",
+  "logsBaseUrl": "http://monitoring-loki-gateway.default.svc",
+  "folder": "monitoring",
+  "datasource": "mimir",
+  "dashboards": [{"uid": "monitoring-overview", "title": "Monitoring stack overview"}],
+  "datasources": [{"logical": "prometheus", "name": "Mimir", "type": "prometheus"}],
+  "ruleGroups": [
+    {"group": "monitoring-central", "file": "rules/app.yaml", "evaluation": "central"}
+  ],
+  "expiresAt": "2026-11-22T01:00:00Z"
+}

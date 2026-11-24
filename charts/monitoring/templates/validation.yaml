@@ -1,0 +1,12 @@
+{{- if ne .Values.topology .Values.global.topology -}}
+{{- fail "root topology and global.topology must match" -}}
+{{- end -}}
+{{- if and (eq .Values.topology "client") (or .Values.components.mimir .Values.components.alertmanager .Values.components.grafana .Values.components.loki) -}}
+{{- fail "client topology cannot enable central/local services" -}}
+{{- end -}}
+{{- if and (ne .Values.topology "client") (or (not .Values.components.mimir) (not .Values.components.alertmanager) (not .Values.components.grafana) (not .Values.components.loki)) -}}
+{{- fail "central/local topology requires Mimir, Alertmanager, Grafana, and Loki" -}}
+{{- end -}}
+{{- if or (not .Values.components.alloy) (not .Values.components.kubeStateMetrics) (not .Values.components.nodeExporter) (not .Values.global.collectors.kubelet.enabled) (not .Values.global.collectors.controlPlane.enabled) -}}
+{{- fail "Alloy, kube-state-metrics, node-exporter, kubelet, and control-plane collection must be enabled" -}}
+{{- end -}}

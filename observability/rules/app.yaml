@@ -1,0 +1,14 @@
+groups:
+  - name: monitoring-central
+    interval: 1m
+    rules:
+      - record: monitoring:up:sum
+        expr: sum(up{org=~".+", cluster=~".+", job=~".+", instance=~".+"})
+      - alert: MonitoringTargetDown
+        expr: up{org=~".+", cluster=~".+", job=~".+", instance=~".+"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          app: monitoring
+        annotations:
+          summary: Monitoring target is down

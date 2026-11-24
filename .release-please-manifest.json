@@ -1,0 +1,5 @@
+{
+  "charts/monitoring": "0.1.0",
+  "packages/monitoring-stack": "1.3.0",
+  "packages/observability-pack": "0.1.0"
+}

@@ -1,0 +1,11 @@
+name: edge
+# Manual-only edge releases: decoupled from ordinary merges; dispatch is a
+# separate explicit decision and is never triggered by a merge.
+on: {workflow_dispatch: {}}
+permissions: {contents: read}
+concurrency: {group: "hiroba-release-${{ github.repository }}", cancel-in-progress: false}
+jobs:
+  edge:
+    uses: 7K-Hiroba/workflows/.github/workflows/edge.yml@f092eab6bb07de64a2d6f2e35ac4c65fca794f76 # v2.0.3
+    with: {root: .}
+    permissions: {contents: write, packages: write, id-token: write, attestations: write, actions: read, artifact-metadata: write}

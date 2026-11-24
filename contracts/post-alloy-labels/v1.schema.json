@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inari.dev/schemas/post-alloy-labels-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractVersion", "alloyVersion", "stabilityLevel", "communityComponents", "requiredLabels", "preservedMetricName", "sourceConfig", "reviewRequired", "centralRuleSemantics"],
+  "properties": {
+    "contractVersion": {"const": "inari.monitoring.post-alloy-labels/v1"},
+    "alloyVersion": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "stabilityLevel": {"const": "generally-available"},
+    "communityComponents": {"const": false},
+    "requiredLabels": {"type": "array", "uniqueItems": true, "minItems": 4, "items": {"enum": ["org", "cluster", "job", "instance"]}},
+    "optionalLabels": {"type": "array", "uniqueItems": true, "items": {"enum": ["namespace", "app"]}},
+    "preservedMetricName": {"const": true},
+    "sourceConfig": {"const": "observability/tests/alloy/config.river"},
+    "reviewRequired": {"const": true},
+    "centralRuleSemantics": {"type": "string", "minLength": 1}
+  }
+}

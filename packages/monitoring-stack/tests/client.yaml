@@ -1,0 +1,14 @@
+apiVersion: observability.inari.io/v1alpha1
+kind: MonitoringStack
+metadata:
+  name: client
+  namespace: default
+spec:
+  name: monitoring-client
+  topology: client
+  org: ci
+  chartVersion: 0.1.0
+  chartDigest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  remoteWriteUrl: http://mimir-central.observability.svc:80/api/v1/push
+  lokiPushUrl: http://loki-central.observability.svc:80/loki/api/v1/push
+  controlPlaneTargets: control-plane-1.example:6443,control-plane-2.example:6443

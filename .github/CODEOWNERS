@@ -1,0 +1,7 @@
+* @7K-Hiroba/hiroba-maintainers
+/contracts/ @7K-Hiroba/hiroba-maintainers @7K-Hiroba/platform-security
+/observability/tests/alloy/ @7K-Hiroba/hiroba-maintainers @7K-Hiroba/platform-security
+/packages/monitoring-stack/ @7K-Hiroba/hiroba-maintainers @7K-Hiroba/platform-security
+/tests/smoke/ @7K-Hiroba/hiroba-maintainers @7K-Hiroba/platform-security
+/docs/runbook.md @7K-Hiroba/hiroba-maintainers @7K-Hiroba/platform-security
+/docs/rollout.md @7K-Hiroba/hiroba-maintainers @7K-Hiroba/platform-security

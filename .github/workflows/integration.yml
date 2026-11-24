@@ -1,0 +1,43 @@
+name: full-stack integration
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  components:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {fetch-depth: 0}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: 7K-Hiroba/workflows
+          ref: f092eab6bb07de64a2d6f2e35ac4c65fca794f76
+          path: .hiroba/workflows
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
+      - run: python -m pip install --requirement .hiroba/workflows/requirements-dev.txt
+      - id: tools-key
+        run: echo "key=$(.hiroba/workflows/scripts/install-ci-tools.sh --cache-key promtool alloy helm kubectl)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with: {path: .hiroba-cache, key: "monitoring-components-${{ steps.tools-key.outputs.key }}"}
+      - run: .hiroba/workflows/scripts/install-ci-tools.sh promtool alloy helm kubectl
+      - run: python .hiroba/workflows/scripts/prepare-chart.py --chart charts/monitoring
+      - run: ./scripts/test-alloy-pipeline.sh --check
+      - run: ./tests/grafana/test-provisioning.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: failure()
+        with:
+          name: component-diagnostics
+          path: diagnostics/
+          if-no-files-found: ignore
+          retention-days: 14
+  integration:
+    uses: 7K-Hiroba/workflows/.github/workflows/test-stack.yml@f092eab6bb07de64a2d6f2e35ac4c65fca794f76 # v2.0.3
+    # The PR check remains associated with the head; the default checkout binds
+    # evidence to the exact merge tree (or push SHA) being tested.
+    with: {root: .}

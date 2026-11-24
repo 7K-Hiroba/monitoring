@@ -1,0 +1,21 @@
+schema: inari.hiroba.app.v2
+app: monitoring
+archetype: stack
+trustTier: experimental
+stackTest: {path: tests/stack}
+components:
+  chartsRoot: charts
+  packagesRoot: packages
+  templatesRoot: templates
+observability:
+  path: observability
+  chart: charts/monitoring
+  package: packages/observability-pack
+  alloyConfig: observability/tests/alloy/config.river
+smoke:
+  path: tests/smoke
+  targetComponent: charts/monitoring
+releaseComponents:
+  packages/monitoring-stack: package-monitoring-stack
+  charts/monitoring: chart-monitoring
+  packages/observability-pack: package-observability-pack

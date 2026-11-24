@@ -1,0 +1,31 @@
+apiVersion: v2
+name: monitoring
+description: Full Kubernetes observability with Mimir, Alertmanager, Grafana, Loki, Alloy, and Kubernetes collectors; no Prometheus server
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: mimir-distributed
+    version: 6.2.2
+    repository: https://grafana.github.io/helm-charts
+    condition: components.mimir
+  - name: grafana
+    version: 14.5.0
+    repository: https://grafana-community.github.io/helm-charts
+    condition: components.grafana
+  - name: loki
+    version: 7.7.0
+    repository: https://grafana.github.io/helm-charts
+    condition: components.loki
+  - name: alloy
+    version: 1.6.0
+    repository: https://grafana.github.io/helm-charts
+    condition: components.alloy
+  - name: kube-state-metrics
+    version: 9.0.1
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: components.kubeStateMetrics
+  - name: prometheus-node-exporter
+    version: 5.2.0
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: components.nodeExporter
