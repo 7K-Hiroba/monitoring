@@ -8,29 +8,258 @@ concurrency: {group: "hiroba-release-${{ github.repository }}", cancel-in-progre
 jobs:
   gate:
     runs-on: ubuntu-latest
+    # The commit association and PR-detail APIs require only read access. Keep
+    # the reusable release job's existing permissions isolated from this gate.
+    permissions: {contents: read, pull-requests: read}
     outputs: {should_release: "${{ steps.gate.outputs.should_release }}"}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with: {fetch-depth: 2}
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with: {python-version: "3.11"}
       - id: gate
+        shell: python
+        env:
+          CHECKOUT_ROOT: ${{ github.workspace }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPAIR_TAG: ${{ inputs.repair_tag }}
         run: |
-          set -euo pipefail
-          should_release=false
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            if [[ -n "${{ inputs.repair_tag }}" ]]; then
-              should_release=true
-            else
-              echo "::notice::repair_tag is empty; stable release repair was not requested"
-            fi
-          else
-            subject=$(git log -1 --pretty=%s)
-            parent=$(git log -1 --pretty=%s HEAD^2 2>/dev/null || true)
-            if grep -qiE '^Merge pull request #[0-9]+ ' <<< "$subject" \
-               && grep -qiE '^chore(\(.*\))?: release' <<< "$parent"; then
-              should_release=true
-            fi
-          fi
-          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          import re
+          import subprocess
+          import urllib.error
+          import urllib.parse
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+          SEMVER_RE = re.compile(
+              r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+              r"(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
+              r"(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?"
+              r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+          )
+
+
+          class GateError(Exception):
+              pass
+
+
+          def api(path, missing_ok=False):
+              repository = os.environ["GITHUB_REPOSITORY"]
+              api_root = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+              request = Request(
+                  f"{api_root}/repos/{repository}/{path}",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "hiroba-release-gate",
+                  },
+              )
+              try:
+                  with urlopen(request, timeout=30) as response:
+                      if 'rel="next"' in response.headers.get("Link", ""):
+                          raise GateError(f"refusing paginated API response for {path}")
+                      payload = json.loads(response.read().decode())
+                      return payload
+              except urllib.error.HTTPError as error:
+                  if missing_ok and error.code == 404:
+                      return None
+                  raise GateError(f"GitHub API HTTP {error.code} for {path}") from error
+              except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+                  raise GateError(f"GitHub API failure for {path}: {type(error).__name__}") from error
+
+
+          def read_json(path):
+              try:
+                  return json.loads(Path(path).read_text())
+              except (OSError, json.JSONDecodeError) as error:
+                  raise GateError(f"cannot read valid JSON from {path}") from error
+
+
+          def manifest(text, source):
+              try:
+                  value = json.loads(text)
+              except json.JSONDecodeError as error:
+                  raise GateError(f"invalid manifest JSON at {source}") from error
+              if not isinstance(value, dict) or not value:
+                  raise GateError(f"manifest at {source} must be a nonempty object")
+              for path, version in value.items():
+                  if not isinstance(path, str) or not isinstance(version, str) or not SEMVER_RE.fullmatch(version):
+                      raise GateError(f"manifest at {source} contains an invalid path or semver")
+              return value
+
+
+          def git(root, *args):
+              result = subprocess.run(
+                  ["git", "-C", str(root), *args], text=True, capture_output=True, check=False
+              )
+              if result.returncode:
+                  raise GateError(f"git {args[0]} failed at the reviewed release source")
+              return result.stdout.strip()
+
+
+          def evaluate():
+              event = os.environ.get("GITHUB_EVENT_NAME", "")
+              repair_tag = os.environ.get("REPAIR_TAG", "")
+              if event == "workflow_dispatch":
+                  if repair_tag:
+                      print("::notice::nonempty repair_tag authorizes only the existing release repair flow")
+                      return True
+                  print("::notice::repair_tag is empty; stable release repair was not requested")
+                  return False
+              if event != "push":
+                  print(f"::notice::event {event or 'unknown'} is not a stable release event")
+                  return False
+
+              repository = os.environ.get("GITHUB_REPOSITORY", "")
+              sha = os.environ.get("GITHUB_SHA", "").lower()
+              if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
+                  raise GateError("invalid repository identity")
+              if not SHA_RE.fullmatch(sha):
+                  raise GateError("invalid current source SHA")
+              if os.environ.get("GITHUB_REF") != "refs/heads/main":
+                  raise GateError("stable release push is not on main")
+              if not os.environ.get("GH_TOKEN"):
+                  raise GateError("read-only GitHub token is unavailable")
+
+              root = Path(os.environ["CHECKOUT_ROOT"])
+              if git(root, "rev-parse", "HEAD").lower() != sha:
+                  raise GateError("checkout HEAD does not match the current merge result")
+              config = read_json(root / "release-please-config.json")
+              if not isinstance(config, dict) or config.get("separate-pull-requests") is not False:
+                  raise GateError("producer must use the aggregated release-please pull request")
+
+              # Signed R invokes release-please-action 45996ed1, whose lockfile
+              # pins release-please 17.6.0. With separate-pull-requests=false,
+              # plugins/merge.py calls BranchName.ofTargetBranch(targetBranch).
+              # branch-name.ts maps main to this identity; do not infer it from
+              # titles, commit subjects, actors, or a component-looking branch.
+              target_branch = "main"
+              expected_head = f"release-please--branches--{target_branch}"
+              associated = api(f"commits/{sha}/pulls?per_page=100")
+              if not isinstance(associated, list):
+                  raise GateError("commit association response is not a list")
+              candidates = [
+                  item for item in associated
+                  if isinstance(item, dict) and str(item.get("merge_commit_sha", "")).lower() == sha
+              ]
+              if not candidates:
+                  print("::notice::no merged PR resolves to this SHA; ordinary push skips stable release")
+                  return False
+              if len(candidates) != 1:
+                  raise GateError("multiple merged PRs claim the current SHA")
+              number = candidates[0].get("number")
+              if type(number) is not int or number < 1:
+                  raise GateError("merged PR candidate has an invalid number")
+
+              pr = api(f"pulls/{number}")
+              if not isinstance(pr, dict) or pr.get("number") != number:
+                  raise GateError("merged PR detail identity mismatch")
+              if (
+                  pr.get("state") != "closed"
+                  or pr.get("merged") is not True
+                  or not pr.get("merged_at")
+                  or str(pr.get("merge_commit_sha", "")).lower() != sha
+              ):
+                  raise GateError("PR is not merged at the current SHA")
+              base, head = pr.get("base"), pr.get("head")
+              if not isinstance(base, dict) or not isinstance(head, dict):
+                  raise GateError("merged PR is missing base/head identities")
+              base_repo, head_repo = base.get("repo"), head.get("repo")
+              if not isinstance(base_repo, dict) or not isinstance(head_repo, dict):
+                  raise GateError("merged PR is missing repository identities")
+              if base.get("ref") != target_branch or base_repo.get("full_name") != repository:
+                  raise GateError("merged PR base is not this repository's main branch")
+              if (
+                  head_repo.get("full_name") != repository
+                  or head_repo.get("fork") is not False
+                  or base_repo.get("fork") is not False
+              ):
+                  raise GateError("release PR must originate from this same non-fork repository")
+              if head.get("ref") != expected_head:
+                  print(f"::notice::merged PR #{number} is not the producer branch; stable release skipped")
+                  return False
+
+              changed_files = api(f"pulls/{number}/files?per_page=100")
+              if not isinstance(changed_files, list):
+                  raise GateError("merged PR files response is not a list")
+              filenames = {item.get("filename") for item in changed_files if isinstance(item, dict)}
+              if not {".release-please-manifest.json", "CHANGELOG.md"}.issubset(filenames):
+                  raise GateError("release PR did not change both manifest and CHANGELOG")
+              if "release-please-config.json" in filenames:
+                  raise GateError("release PR must not change its producer contract")
+
+              base_sha = str(base.get("sha", "")).lower()
+              if not SHA_RE.fullmatch(base_sha):
+                  raise GateError("release PR has an invalid base SHA")
+              base_manifest = manifest(
+                  git(root, "show", f"{base_sha}:.release-please-manifest.json"), base_sha
+              )
+              current_manifest = manifest(
+                  (root / ".release-please-manifest.json").read_text(), sha
+              )
+              # Monitoring has independently versioned components. A genuine
+              # aggregated Release PR must contain exactly one new/changed
+              # semver delta; unchanged entries remain valid and are not new
+              # release targets. Multiple deltas are ambiguous and fail closed.
+              changed = sorted(
+                  path for path in set(base_manifest) | set(current_manifest)
+                  if base_manifest.get(path) != current_manifest.get(path)
+              )
+              if len(changed) != 1 or changed[0] not in current_manifest:
+                  raise GateError("release PR must contain exactly one new manifest version")
+              component_path = changed[0]
+              version = current_manifest[component_path]
+
+              try:
+                  changelog = (root / "CHANGELOG.md").read_text()
+              except OSError as error:
+                  raise GateError("CHANGELOG.md is missing at the merged SHA") from error
+              changelog_heading = rf"^## \[?v?{re.escape(version)}\]?(?:\s|\(|$)"
+              if not re.search(changelog_heading, changelog, re.MULTILINE):
+                  raise GateError(f"CHANGELOG.md has no heading for {version}")
+
+              # The ordinary target is v<version>. Signed R's finalizer uses
+              # <releaseComponent>-v<version> for component releases; check both
+              # when a component identity exists so neither tag can be reused.
+              tags = {f"v{version}"}
+              packages = config.get("packages")
+              if not isinstance(packages, dict) or not isinstance(packages.get(component_path), dict):
+                  raise GateError("changed manifest path is absent from the producer config")
+              component = packages[component_path].get("component")
+              if config.get("include-component-in-tag") and not component:
+                  raise GateError("component release is missing its release identity")
+              if component:
+                  if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", component):
+                      raise GateError("invalid release component identity")
+                  tags.add(f"{component}-v{version}")
+              for tag in sorted(tags):
+                  path = f"git/ref/tags/{urllib.parse.quote(tag, safe='')}"
+                  if api(path, missing_ok=True) is not None:
+                      raise GateError(f"target tag {tag} already exists")
+              print(f"::notice::merged producer PR #{number} and metadata validated for {version}")
+              return True
+
+
+          def main():
+              should_release = False
+              failed = False
+              try:
+                  should_release = evaluate()
+              except Exception as error:
+                  failed = True
+                  print(f"::error::release gate denied: {error}")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+                  output.write(f"should_release={'true' if should_release else 'false'}\n")
+              if failed:
+                  raise SystemExit(1)
+
+
+          if __name__ == "__main__":
+              main()
   release:
     needs: gate
     if: needs.gate.outputs.should_release == 'true'

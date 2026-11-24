@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
 import tempfile
 import unittest
+import urllib.error
+import urllib.parse
 from pathlib import Path
+from unittest import mock
 
 import jsonschema
 import yaml
@@ -379,27 +384,398 @@ esac
         )
         self.assertIn("packages: write", text)
 
-    def test_stable_release_requires_release_merge_or_repair_dispatch(self):
-        release = self.load(".github/workflows/release.yml")
-        jobs = release["jobs"]
-        self.assertEqual(jobs["release"]["needs"], "gate")
-        self.assertEqual(jobs["release"]["if"], "needs.gate.outputs.should_release == 'true'")
-        script = jobs["gate"]["steps"][1]["run"]
-        self.assertIn("should_release=false", script)
-        self.assertIn('[[ "${{ github.event_name }}" == "workflow_dispatch" ]]', script)
-        self.assertIn('[[ -n "${{ inputs.repair_tag }}" ]]', script)
-        self.assertIn("git log -1 --pretty=%s HEAD^2", script)
-        self.assertIn(r"^Merge pull request #[0-9]+ ", script)
-        self.assertIn(r"^chore(\(.*\))?: release", script)
+class ReleaseGateBehaviorTests(unittest.TestCase):
+    repository = "7K-Hiroba/monitoring"
+    release_branch = "release-please--branches--main"
 
-    def test_release_please_skips_cleanly_when_app_is_not_configured(self):
-        workflow = self.load(".github/workflows/release-please.yml")
+    @classmethod
+    def setUpClass(cls):
+        workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+        cls.gate_source = next(
+            step["run"] for step in workflow["jobs"]["gate"]["steps"] if step.get("id") == "gate"
+        )
+
+    def git(self, root, *args):
+        return subprocess.run(
+            ["git", "-C", str(root), *args],
+            check=True,
+            text=True,
+            capture_output=True,
+        ).stdout.strip()
+
+    def history(
+        self,
+        root,
+        *,
+        form,
+        branch,
+        merge_subject,
+        base_manifest,
+        current_manifest,
+        current_manifest_text,
+        changelog_version,
+        config,
+        omit_manifest,
+        omit_changelog,
+    ):
+        root.mkdir()
+        self.git(root, "init", "-q", "-b", "main")
+        self.git(root, "config", "user.name", "Release Gate Test")
+        self.git(root, "config", "user.email", "release-gate@example.invalid")
+        (root / "release-please-config.json").write_text(json.dumps(config))
+        (root / ".release-please-manifest.json").write_text(json.dumps(base_manifest) + "\n")
+        (root / "CHANGELOG.md").write_text("# Changelog\n")
+        self.git(root, "add", "--", ".")
+        self.git(root, "commit", "-qm", "chore: base")
+        base_sha = self.git(root, "rev-parse", "HEAD")
+
+        self.git(root, "switch", "-qc", branch)
+        if omit_manifest:
+            (root / ".release-please-manifest.json").unlink()
+        elif current_manifest_text is not None:
+            (root / ".release-please-manifest.json").write_text(current_manifest_text)
+        else:
+            (root / ".release-please-manifest.json").write_text(json.dumps(current_manifest) + "\n")
+        if omit_changelog:
+            (root / "CHANGELOG.md").unlink()
+        else:
+            (root / "CHANGELOG.md").write_text(
+                f"# Changelog\n\n## [{changelog_version}](https://example.invalid/release) (2026-11-24)\n"
+            )
+        self.git(root, "add", "--", ".")
+        self.git(root, "commit", "-qm", "chore: release producer commit")
+        head_sha = self.git(root, "rev-parse", "HEAD")
+
+        self.git(root, "switch", "-q", "main")
+        if form == "merge":
+            self.git(root, "merge", "-q", "--no-ff", branch, "-m", merge_subject)
+        elif form == "squash":
+            self.git(root, "merge", "-q", "--squash", branch)
+            self.git(root, "commit", "-qm", merge_subject)
+        elif form == "rebase":
+            self.git(root, "cherry-pick", branch)
+        else:
+            self.fail(f"unknown test merge form {form}")
+        return self.git(root, "rev-parse", "HEAD"), base_sha, head_sha
+
+    def run_gate(
+        self,
+        *,
+        event="push",
+        repair_tag="",
+        form="merge",
+        branch=release_branch,
+        title="edited title",
+        merge_subject="edited merge subject",
+        base_manifest=None,
+        current_manifest=None,
+        current_manifest_text=None,
+        changelog_version="1.1.0",
+        config=None,
+        omit_manifest=False,
+        omit_changelog=False,
+        associated=None,
+        pr_transform=None,
+        pr_files=None,
+        existing_tags=(),
+        api_error="",
+    ):
+        base_manifest = base_manifest or {".": "1.0.0"}
+        current_manifest = current_manifest or {".": "1.1.0"}
+        config = config or {
+            "separate-pull-requests": False,
+            "include-component-in-tag": False,
+            "packages": {".": {}},
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "consumer"
+            if event == "push":
+                sha, base_sha, head_sha = self.history(
+                    root,
+                    form=form,
+                    branch=branch,
+                    merge_subject=merge_subject,
+                    base_manifest=base_manifest,
+                    current_manifest=current_manifest,
+                    current_manifest_text=current_manifest_text,
+                    changelog_version=changelog_version,
+                    config=config,
+                    omit_manifest=omit_manifest,
+                    omit_changelog=omit_changelog,
+                )
+            else:
+                root.mkdir()
+                sha, base_sha, head_sha = "a" * 40, "b" * 40, "c" * 40
+
+            if associated is None:
+                associated = [{"number": 7, "merge_commit_sha": sha}]
+            elif associated == "multiple":
+                associated = [
+                    {"number": 7, "merge_commit_sha": sha},
+                    {"number": 8, "merge_commit_sha": sha},
+                ]
+            pr = {
+                "number": 7,
+                "state": "closed",
+                "merged": True,
+                "merged_at": "2026-11-24T12:00:00Z",
+                "merge_commit_sha": sha,
+                "title": title,
+                "base": {
+                    "ref": "main",
+                    "sha": base_sha,
+                    "repo": {"full_name": self.repository, "fork": False},
+                },
+                "head": {
+                    "ref": branch,
+                    "sha": head_sha,
+                    "repo": {"full_name": self.repository, "fork": False},
+                },
+            }
+            if pr_transform:
+                pr_transform(pr)
+            if pr_files is None:
+                pr_files = [
+                    {"filename": ".release-please-manifest.json"},
+                    {"filename": "CHANGELOG.md"},
+                ]
+
+            class Response:
+                def __init__(self, payload):
+                    self.payload = json.dumps(payload).encode()
+                    self.headers = {}
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    return None
+
+                def read(self):
+                    return self.payload
+
+            requests = []
+
+            def fake_urlopen(request, timeout):
+                self.assertEqual(timeout, 30)
+                url = request.full_url
+                requests.append(url)
+                path = urllib.parse.urlsplit(url).path
+                prefix = f"/repos/{self.repository}"
+                association_path = f"{prefix}/commits/{sha}/pulls"
+                detail_path = f"{prefix}/pulls/7"
+                files_path = f"{detail_path}/files"
+
+                def reply(payload, status=200):
+                    if status != 200:
+                        raise urllib.error.HTTPError(
+                            url, status, "mock API response", None, io.BytesIO(b"{}")
+                        )
+                    return Response(payload)
+
+                if path == association_path:
+                    if api_error == "association":
+                        return reply({}, 500)
+                    return reply(associated)
+                if path == detail_path:
+                    if api_error == "detail":
+                        return reply({}, 500)
+                    return reply(pr)
+                if path == files_path:
+                    if api_error == "files":
+                        return reply({}, 500)
+                    return reply(pr_files)
+                if path.startswith(f"{prefix}/git/ref/tags/"):
+                    if api_error == "tag":
+                        return reply({}, 500)
+                    tag = urllib.parse.unquote(path.rsplit("/", 1)[-1])
+                    if tag in existing_tags:
+                        return reply({"ref": f"refs/tags/{tag}"})
+                    return reply({}, 404)
+                return reply({}, 500)
+
+            output = Path(temporary) / "github-output"
+            output.write_text("")
+            namespace = {"__name__": "release_gate_test"}
+            exec(compile(self.gate_source, ".github/workflows/release.yml", "exec"), namespace)
+            env = {
+                "CHECKOUT_ROOT": str(root),
+                "GITHUB_API_URL": "https://api.github.test",
+                "GITHUB_REPOSITORY": self.repository,
+                "GITHUB_SHA": sha,
+                "GITHUB_REF": "refs/heads/main",
+                "GITHUB_EVENT_NAME": event,
+                "GITHUB_OUTPUT": str(output),
+                "GH_TOKEN": "unit-test-token",
+                "REPAIR_TAG": repair_tag,
+            }
+            stdout, stderr = io.StringIO(), io.StringIO()
+            exit_code = 0
+            with mock.patch.dict(os.environ, env), mock.patch.dict(namespace, {"urlopen": fake_urlopen}):
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    try:
+                        namespace["main"]()
+                    except SystemExit as error:
+                        exit_code = error.code or 0
+            lines = output.read_text().splitlines()
+            self.assertEqual(len(lines), 1, lines)
+            should_release = lines[0] == "should_release=true"
+            self.assertIn(lines[0], ("should_release=true", "should_release=false"))
+            return {
+                "should_release": should_release,
+                "exit_code": exit_code,
+                "logs": stdout.getvalue() + stderr.getvalue(),
+                "requests": requests,
+            }
+
+    def test_only_genuine_release_pr_results_enable_release(self):
+        for form in ("merge", "squash", "rebase"):
+            with self.subTest(form=form):
+                result = self.run_gate(
+                    form=form,
+                    title="an edited title is not an identity",
+                    merge_subject="chore: release forged-looking subject",
+                )
+                self.assertTrue(result["should_release"], result)
+                self.assertEqual(result["exit_code"], 0, result)
+
+    def test_ordinary_and_forged_subjects_skip_stable_release(self):
+        cases = {
+            "no merged PR": {"associated": []},
+            "ordinary merge with chore subject": {
+                "branch": "feature/ordinary",
+                "merge_subject": "chore: release not-a-release",
+            },
+            "forged title and subject": {
+                "branch": "feature/forged",
+                "title": "chore: release forged",
+                "merge_subject": "chore: release forged",
+            },
+        }
+        for name, kwargs in cases.items():
+            with self.subTest(name=name):
+                result = self.run_gate(**kwargs)
+                self.assertFalse(result["should_release"], result)
+                self.assertEqual(result["exit_code"], 0, result)
+
+    def test_release_pr_identity_and_api_fail_closed(self):
+        cases = {
+            "wrong head repository": lambda pr: pr["head"]["repo"].update(full_name="fork/monitoring"),
+            "fork head repository": lambda pr: pr["head"]["repo"].update(fork=True),
+            "wrong base branch": lambda pr: pr["base"].update(ref="develop"),
+            "wrong base repository": lambda pr: pr["base"]["repo"].update(full_name="fork/monitoring"),
+            "wrong merged SHA": lambda pr: pr.update(merge_commit_sha="0" * 40),
+            "not merged": lambda pr: pr.update(merged=False, merged_at=None),
+        }
+        for name, transform in cases.items():
+            with self.subTest(name=name):
+                result = self.run_gate(pr_transform=transform)
+                self.assertFalse(result["should_release"], result)
+                self.assertNotEqual(result["exit_code"], 0, result)
+        for name, kwargs in {
+            "ambiguous merged PRs": {"associated": "multiple"},
+            "association API failure": {"api_error": "association"},
+            "detail API failure": {"api_error": "detail"},
+        }.items():
+            with self.subTest(name=name):
+                result = self.run_gate(**kwargs)
+                self.assertFalse(result["should_release"], result)
+                self.assertNotEqual(result["exit_code"], 0, result)
+
+    def test_release_metadata_and_tags_fail_closed(self):
+        multi_base = {"charts/monitoring": "0.1.0", "packages/monitoring-stack": "1.3.0"}
+        multi_current = {"charts/monitoring": "0.2.0", "packages/monitoring-stack": "1.4.0"}
+        cases = {
+            "missing manifest": {"omit_manifest": True},
+            "invalid manifest JSON": {"current_manifest_text": "{"},
+            "invalid semver": {"current_manifest": {".": "01.1.0"}},
+            "unchanged manifest": {"current_manifest": {".": "1.0.0"}},
+            "multiple version deltas": {
+                "base_manifest": multi_base,
+                "current_manifest": multi_current,
+            },
+            "missing changelog": {"omit_changelog": True},
+            "changelog missing version": {"changelog_version": "9.9.9"},
+            "manifest absent from PR": {"pr_files": [{"filename": "CHANGELOG.md"}]},
+            "changelog absent from PR": {
+                "pr_files": [{"filename": ".release-please-manifest.json"}]
+            },
+            "existing target tag": {"existing_tags": ("v1.1.0",)},
+            "files API failure": {"api_error": "files"},
+            "tag API failure": {"api_error": "tag"},
+        }
+        for name, kwargs in cases.items():
+            with self.subTest(name=name):
+                result = self.run_gate(**kwargs)
+                self.assertFalse(result["should_release"], result)
+                self.assertNotEqual(result["exit_code"], 0, result)
+
+    def test_one_component_delta_preserves_other_versions_and_checks_both_tags(self):
+        result = self.run_gate(
+            config={
+                "separate-pull-requests": False,
+                "include-component-in-tag": True,
+                "packages": {
+                    "charts/monitoring": {"component": "chart-monitoring"},
+                    "packages/monitoring-stack": {"component": "package-monitoring-stack"},
+                },
+            },
+            base_manifest={"charts/monitoring": "0.1.0", "packages/monitoring-stack": "1.3.0"},
+            current_manifest={"charts/monitoring": "0.2.0", "packages/monitoring-stack": "1.3.0"},
+            changelog_version="0.2.0",
+        )
+        self.assertTrue(result["should_release"], result)
+        self.assertEqual(result["exit_code"], 0, result)
+        self.assertTrue(any(url.endswith("/git/ref/tags/v0.2.0") for url in result["requests"]))
+        self.assertTrue(any(url.endswith("/git/ref/tags/chart-monitoring-v0.2.0") for url in result["requests"]))
+
+    def test_dispatch_is_repair_only(self):
+        empty = self.run_gate(event="workflow_dispatch", repair_tag="")
+        self.assertFalse(empty["should_release"], empty)
+        self.assertEqual(empty["exit_code"], 0, empty)
+        self.assertIn("repair_tag", empty["logs"])
+        self.assertEqual(empty["requests"], [])
+
+        repair = self.run_gate(event="workflow_dispatch", repair_tag="v1.1.0")
+        self.assertTrue(repair["should_release"], repair)
+        self.assertEqual(repair["exit_code"], 0, repair)
+        self.assertEqual(repair["requests"], [])
+
+    def test_release_please_credential_preflight_handles_each_missing_input(self):
+        workflow = yaml.safe_load((ROOT / ".github/workflows/release-please.yml").read_text())
         jobs = workflow["jobs"]
-        self.assertEqual(jobs["propose"]["if"], "${{ vars.HIROBA_RELEASE_APP_ID != '' }}")
-        self.assertEqual(jobs["not-configured"]["if"], "${{ vars.HIROBA_RELEASE_APP_ID == '' }}")
-        notice = jobs["not-configured"]["steps"][0]["run"]
-        self.assertIn("HIROBA_RELEASE_APP_ID", notice)
-        self.assertIn("HIROBA_RELEASE_PRIVATE_KEY", notice)
+        script = next(
+            step["run"]
+            for step in jobs["preflight"]["steps"]
+            if step.get("id") == "credentials"
+        )
+        for app_id, private_key, configured in (
+            ("", "", "false"),
+            ("12345", "", "false"),
+            ("", "private-key-material", "false"),
+            ("12345", "private-key-material", "true"),
+        ):
+            with self.subTest(app_id=bool(app_id), private_key=bool(private_key)):
+                with tempfile.TemporaryDirectory() as temporary:
+                    output = Path(temporary) / "output"
+                    env = os.environ.copy()
+                    env.update(
+                        RELEASE_APP_ID=app_id,
+                        RELEASE_PRIVATE_KEY=private_key,
+                        GITHUB_OUTPUT=str(output),
+                    )
+                    result = subprocess.run(
+                        ["bash", "-c", script], env=env, text=True, capture_output=True, check=False
+                    )
+                    contents = output.read_text()
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(contents, f"configured={configured}\n")
+                    if private_key:
+                        self.assertNotIn(private_key, result.stdout + result.stderr + contents)
+        self.assertEqual(jobs["propose"]["needs"], "preflight")
+        self.assertEqual(jobs["propose"]["if"], "needs.preflight.outputs.configured == 'true'")
+        self.assertEqual(jobs["not-configured"]["if"], "needs.preflight.outputs.configured != 'true'")
+        self.assertNotIn("secrets.", str(jobs["propose"]["if"]))
 
 
 if __name__ == "__main__":
