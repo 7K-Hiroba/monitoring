@@ -417,6 +417,10 @@ class ReleaseGateBehaviorTests(unittest.TestCase):
         config,
         omit_manifest,
         omit_changelog,
+        omit_extra,
+        root_changelog_only,
+        base_extra_overrides,
+        current_extra_overrides,
     ):
         root.mkdir()
         self.git(root, "init", "-q", "-b", "main")
@@ -424,7 +428,20 @@ class ReleaseGateBehaviorTests(unittest.TestCase):
         self.git(root, "config", "user.email", "release-gate@example.invalid")
         (root / "release-please-config.json").write_text(json.dumps(config))
         (root / ".release-please-manifest.json").write_text(json.dumps(base_manifest) + "\n")
-        (root / "CHANGELOG.md").write_text("# Changelog\n")
+
+        def component_file(path, relative, version):
+            target = root / path / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(f"version: {version}\nname: release-fixture\n")
+            return target
+
+        for path, package in config["packages"].items():
+            changelog = root / path / package["changelog-path"]
+            changelog.parent.mkdir(parents=True, exist_ok=True)
+            changelog.write_text("# Changelog\n")
+            for extra in package.get("extra-files", []):
+                version = base_extra_overrides.get(path, base_manifest[path])
+                component_file(path, extra, version)
         self.git(root, "add", "--", ".")
         self.git(root, "commit", "-qm", "chore: base")
         base_sha = self.git(root, "rev-parse", "HEAD")
@@ -436,12 +453,36 @@ class ReleaseGateBehaviorTests(unittest.TestCase):
             (root / ".release-please-manifest.json").write_text(current_manifest_text)
         else:
             (root / ".release-please-manifest.json").write_text(json.dumps(current_manifest) + "\n")
-        if omit_changelog:
-            (root / "CHANGELOG.md").unlink()
-        else:
+
+        deltas = [
+            path for path in set(base_manifest) | set(current_manifest)
+            if base_manifest.get(path) != current_manifest.get(path)
+        ]
+        for index, path in enumerate(config["packages"]):
+            package = config["packages"][path]
+            if path in deltas and not root_changelog_only:
+                changelog = root / path / package["changelog-path"]
+                if omit_changelog and index == 0:
+                    changelog.unlink()
+                else:
+                    version = changelog_version if len(deltas) == 1 else current_manifest[path]
+                    changelog.write_text(
+                        f"# Changelog\n\n## [{version}](https://example.invalid/release) (2026-11-24)\n"
+                    )
+            for extra_index, extra in enumerate(package.get("extra-files", [])):
+                if path not in deltas and path not in current_extra_overrides:
+                    continue
+                target = root / path / extra
+                if omit_extra and index == 0 and extra_index == 0:
+                    target.unlink()
+                    continue
+                version = current_extra_overrides.get(path, current_manifest.get(path, base_manifest[path]))
+                component_file(path, extra, version)
+        if root_changelog_only:
             (root / "CHANGELOG.md").write_text(
-                f"# Changelog\n\n## [{changelog_version}](https://example.invalid/release) (2026-11-24)\n"
+                f"# Changelog\n\n## [{changelog_version}](https://example.invalid/release)\n"
             )
+        (root / "release-fixture.txt").write_text(f"{branch} {form}\n")
         self.git(root, "add", "--", ".")
         self.git(root, "commit", "-qm", "chore: release producer commit")
         head_sha = self.git(root, "rev-parse", "HEAD")
@@ -470,23 +511,27 @@ class ReleaseGateBehaviorTests(unittest.TestCase):
         base_manifest=None,
         current_manifest=None,
         current_manifest_text=None,
-        changelog_version="1.1.0",
+        changelog_version="0.2.0",
         config=None,
         omit_manifest=False,
         omit_changelog=False,
+        omit_extra=False,
+        root_changelog_only=False,
+        base_extra_overrides=None,
+        current_extra_overrides=None,
         associated=None,
         pr_transform=None,
         pr_files=None,
         existing_tags=(),
         api_error="",
     ):
-        base_manifest = base_manifest or {".": "1.0.0"}
-        current_manifest = current_manifest or {".": "1.1.0"}
-        config = config or {
-            "separate-pull-requests": False,
-            "include-component-in-tag": False,
-            "packages": {".": {}},
-        }
+        base_manifest = base_manifest or json.loads((ROOT / ".release-please-manifest.json").read_text())
+        if current_manifest is None:
+            current_manifest = dict(base_manifest)
+            current_manifest["charts/monitoring"] = "0.2.0"
+        config = config or json.loads((ROOT / "release-please-config.json").read_text())
+        base_extra_overrides = base_extra_overrides or {}
+        current_extra_overrides = current_extra_overrides or {}
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "consumer"
             if event == "push":
@@ -502,6 +547,10 @@ class ReleaseGateBehaviorTests(unittest.TestCase):
                     config=config,
                     omit_manifest=omit_manifest,
                     omit_changelog=omit_changelog,
+                    omit_extra=omit_extra,
+                    root_changelog_only=root_changelog_only,
+                    base_extra_overrides=base_extra_overrides,
+                    current_extra_overrides=current_extra_overrides,
                 )
             else:
                 root.mkdir()
@@ -535,10 +584,21 @@ class ReleaseGateBehaviorTests(unittest.TestCase):
             if pr_transform:
                 pr_transform(pr)
             if pr_files is None:
-                pr_files = [
-                    {"filename": ".release-please-manifest.json"},
-                    {"filename": "CHANGELOG.md"},
+                deltas = [
+                    path for path in set(base_manifest) | set(current_manifest)
+                    if base_manifest.get(path) != current_manifest.get(path)
                 ]
+                component_path = deltas[0] if deltas else "charts/monitoring"
+                package = config["packages"][component_path]
+                filenames = {".release-please-manifest.json"}
+                if root_changelog_only:
+                    filenames.add("CHANGELOG.md")
+                else:
+                    filenames.add(f"{component_path}/{package['changelog-path']}")
+                filenames.update(
+                    f"{component_path}/{extra}" for extra in package.get("extra-files", [])
+                )
+                pr_files = [{"filename": filename} for filename in sorted(filenames)]
 
             class Response:
                 def __init__(self, payload):
@@ -683,24 +743,54 @@ class ReleaseGateBehaviorTests(unittest.TestCase):
                 self.assertNotEqual(result["exit_code"], 0, result)
 
     def test_release_metadata_and_tags_fail_closed(self):
-        multi_base = {"charts/monitoring": "0.1.0", "packages/monitoring-stack": "1.3.0"}
-        multi_current = {"charts/monitoring": "0.2.0", "packages/monitoring-stack": "1.4.0"}
+        base = json.loads((ROOT / ".release-please-manifest.json").read_text())
+        invalid = dict(base, **{"charts/monitoring": "01.2.0"})
+        unchanged = dict(base)
+        downgrade = dict(base, **{"charts/monitoring": "0.0.9"})
+        multiple = dict(base, **{
+            "charts/monitoring": "0.2.0",
+            "packages/monitoring-stack": "1.4.0",
+        })
         cases = {
             "missing manifest": {"omit_manifest": True},
             "invalid manifest JSON": {"current_manifest_text": "{"},
-            "invalid semver": {"current_manifest": {".": "01.1.0"}},
-            "unchanged manifest": {"current_manifest": {".": "1.0.0"}},
-            "multiple version deltas": {
-                "base_manifest": multi_base,
-                "current_manifest": multi_current,
+            "invalid semver": {"current_manifest": invalid},
+            "unchanged metadata": {"current_manifest": unchanged},
+            "downgrade": {"current_manifest": downgrade, "changelog_version": "0.0.9"},
+            "multiple deltas": {"current_manifest": multiple},
+            "root changelog only": {"root_changelog_only": True},
+            "missing component changelog": {"omit_changelog": True},
+            "missing component extra-file": {"omit_extra": True},
+            "new extra-file mismatch": {
+                "current_extra_overrides": {"charts/monitoring": "0.3.0"}
             },
-            "missing changelog": {"omit_changelog": True},
-            "changelog missing version": {"changelog_version": "9.9.9"},
-            "manifest absent from PR": {"pr_files": [{"filename": "CHANGELOG.md"}]},
-            "changelog absent from PR": {
-                "pr_files": [{"filename": ".release-please-manifest.json"}]
+            "old extra-file mismatch": {
+                "base_extra_overrides": {"charts/monitoring": "0.1.1"}
             },
-            "existing target tag": {"existing_tags": ("v1.1.0",)},
+            "unchanged component config drift": {
+                "current_extra_overrides": {"packages/monitoring-stack": "1.3.1"}
+            },
+            "component changelog missing version": {"changelog_version": "9.9.9"},
+            "manifest absent from PR": {
+                "pr_files": [
+                    {"filename": "charts/monitoring/CHANGELOG.md"},
+                    {"filename": "charts/monitoring/Chart.yaml"},
+                ]
+            },
+            "component changelog absent from PR": {
+                "pr_files": [
+                    {"filename": ".release-please-manifest.json"},
+                    {"filename": "charts/monitoring/Chart.yaml"},
+                ]
+            },
+            "extra-file absent from PR": {
+                "pr_files": [
+                    {"filename": ".release-please-manifest.json"},
+                    {"filename": "charts/monitoring/CHANGELOG.md"},
+                ]
+            },
+            "existing global tag": {"existing_tags": ("v0.2.0",)},
+            "existing component tag": {"existing_tags": ("chart-monitoring-v0.2.0",)},
             "files API failure": {"api_error": "files"},
             "tag API failure": {"api_error": "tag"},
         }
@@ -710,24 +800,29 @@ class ReleaseGateBehaviorTests(unittest.TestCase):
                 self.assertFalse(result["should_release"], result)
                 self.assertNotEqual(result["exit_code"], 0, result)
 
-    def test_one_component_delta_preserves_other_versions_and_checks_both_tags(self):
-        result = self.run_gate(
-            config={
-                "separate-pull-requests": False,
-                "include-component-in-tag": True,
-                "packages": {
-                    "charts/monitoring": {"component": "chart-monitoring"},
-                    "packages/monitoring-stack": {"component": "package-monitoring-stack"},
-                },
-            },
-            base_manifest={"charts/monitoring": "0.1.0", "packages/monitoring-stack": "1.3.0"},
-            current_manifest={"charts/monitoring": "0.2.0", "packages/monitoring-stack": "1.3.0"},
-            changelog_version="0.2.0",
-        )
-        self.assertTrue(result["should_release"], result)
-        self.assertEqual(result["exit_code"], 0, result)
-        self.assertTrue(any(url.endswith("/git/ref/tags/v0.2.0") for url in result["requests"]))
-        self.assertTrue(any(url.endswith("/git/ref/tags/chart-monitoring-v0.2.0") for url in result["requests"]))
+    def test_genuine_chart_and_package_layouts_pass_and_check_both_tags(self):
+        base = json.loads((ROOT / ".release-please-manifest.json").read_text())
+        cases = {
+            "chart": ("charts/monitoring", "0.2.0", "chart-monitoring-v0.2.0"),
+            "stack package": (
+                "packages/monitoring-stack", "1.4.0", "package-monitoring-stack-v1.4.0"
+            ),
+            "observability package": (
+                "packages/observability-pack", "0.2.0", "package-observability-pack-v0.2.0"
+            ),
+        }
+        for name, (path, version, component_tag) in cases.items():
+            with self.subTest(name=name):
+                current = dict(base)
+                current[path] = version
+                result = self.run_gate(
+                    current_manifest=current,
+                    changelog_version=version,
+                )
+                self.assertTrue(result["should_release"], result)
+                self.assertEqual(result["exit_code"], 0, result)
+                self.assertTrue(any(url.endswith(f"/git/ref/tags/v{version}") for url in result["requests"]))
+                self.assertTrue(any(url.endswith(f"/git/ref/tags/{component_tag}") for url in result["requests"]))
 
     def test_dispatch_is_repair_only(self):
         empty = self.run_gate(event="workflow_dispatch", repair_tag="")
