@@ -365,7 +365,7 @@ esac
             text = path.read_text()
             for line in text.splitlines():
                 if "7K-Hiroba/workflows/" in line and "uses:" in line:
-                    self.assertIn("522c3530c94336249928f5a65a5a9f98c46bf540", line, f"{path}: mutable workflow pin")
+                    self.assertIn("f092eab6bb07de64a2d6f2e35ac4c65fca794f76", line, f"{path}: mutable workflow pin")
 
 
 if __name__ == "__main__":
