@@ -1,5 +1,7 @@
 name: edge
-on: {push: {branches: [main]}}
+# Manual-only edge releases: decoupled from ordinary merges; dispatch is a
+# separate explicit decision and is never triggered by a merge.
+on: {workflow_dispatch: {}}
 permissions: {contents: read}
 concurrency: {group: "hiroba-release-${{ github.repository }}", cancel-in-progress: false}
 jobs:

@@ -367,6 +367,18 @@ esac
                 if "7K-Hiroba/workflows/" in line and "uses:" in line:
                     self.assertIn("f092eab6bb07de64a2d6f2e35ac4c65fca794f76", line, f"{path}: mutable workflow pin")
 
+    def test_edge_release_is_manual_only_and_pin_unchanged(self):
+        edge = self.load(".github/workflows/edge.yml")
+        triggers = edge.get("on") or edge.get(True) or {}
+        self.assertNotIn("push", triggers, "merges must not trigger edge publication")
+        self.assertIn("workflow_dispatch", triggers, "edge must remain manually dispatchable")
+        text = (ROOT / ".github/workflows/edge.yml").read_text()
+        self.assertIn(
+            "7K-Hiroba/workflows/.github/workflows/edge.yml@f092eab6bb07de64a2d6f2e35ac4c65fca794f76 # v2.0.3",
+            text,
+        )
+        self.assertIn("packages: write", text)
+
 
 if __name__ == "__main__":
     unittest.main()
