@@ -379,6 +379,28 @@ esac
         )
         self.assertIn("packages: write", text)
 
+    def test_stable_release_requires_release_merge_or_repair_dispatch(self):
+        release = self.load(".github/workflows/release.yml")
+        jobs = release["jobs"]
+        self.assertEqual(jobs["release"]["needs"], "gate")
+        self.assertEqual(jobs["release"]["if"], "needs.gate.outputs.should_release == 'true'")
+        script = jobs["gate"]["steps"][1]["run"]
+        self.assertIn("should_release=false", script)
+        self.assertIn('[[ "${{ github.event_name }}" == "workflow_dispatch" ]]', script)
+        self.assertIn('[[ -n "${{ inputs.repair_tag }}" ]]', script)
+        self.assertIn("git log -1 --pretty=%s HEAD^2", script)
+        self.assertIn(r"^Merge pull request #[0-9]+ ", script)
+        self.assertIn(r"^chore(\(.*\))?: release", script)
+
+    def test_release_please_skips_cleanly_when_app_is_not_configured(self):
+        workflow = self.load(".github/workflows/release-please.yml")
+        jobs = workflow["jobs"]
+        self.assertEqual(jobs["propose"]["if"], "${{ vars.HIROBA_RELEASE_APP_ID != '' }}")
+        self.assertEqual(jobs["not-configured"]["if"], "${{ vars.HIROBA_RELEASE_APP_ID == '' }}")
+        notice = jobs["not-configured"]["steps"][0]["run"]
+        self.assertIn("HIROBA_RELEASE_APP_ID", notice)
+        self.assertIn("HIROBA_RELEASE_PRIVATE_KEY", notice)
+
 
 if __name__ == "__main__":
     unittest.main()

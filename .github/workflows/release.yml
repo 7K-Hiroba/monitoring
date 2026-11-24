@@ -6,7 +6,34 @@ on:
 permissions: {contents: read}
 concurrency: {group: "hiroba-release-${{ github.repository }}", cancel-in-progress: false}
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs: {should_release: "${{ steps.gate.outputs.should_release }}"}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with: {fetch-depth: 2}
+      - id: gate
+        run: |
+          set -euo pipefail
+          should_release=false
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ -n "${{ inputs.repair_tag }}" ]]; then
+              should_release=true
+            else
+              echo "::notice::repair_tag is empty; stable release repair was not requested"
+            fi
+          else
+            subject=$(git log -1 --pretty=%s)
+            parent=$(git log -1 --pretty=%s HEAD^2 2>/dev/null || true)
+            if grep -qiE '^Merge pull request #[0-9]+ ' <<< "$subject" \
+               && grep -qiE '^chore(\(.*\))?: release' <<< "$parent"; then
+              should_release=true
+            fi
+          fi
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
   release:
+    needs: gate
+    if: needs.gate.outputs.should_release == 'true'
     uses: 7K-Hiroba/workflows/.github/workflows/release.yml@f092eab6bb07de64a2d6f2e35ac4c65fca794f76 # v2.0.3
     with: {root: ., repair_tag: "${{ inputs.repair_tag }}", app-id: "${{ vars.HIROBA_RELEASE_APP_ID }}"}
     secrets:

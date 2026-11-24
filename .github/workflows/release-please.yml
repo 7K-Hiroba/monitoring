@@ -3,8 +3,14 @@ on: {push: {branches: [main]}}
 permissions: {contents: read}
 jobs:
   propose:
+    if: ${{ vars.HIROBA_RELEASE_APP_ID != '' }}
     uses: 7K-Hiroba/workflows/.github/workflows/release-please.yml@f092eab6bb07de64a2d6f2e35ac4c65fca794f76 # v2.0.3
     with: {root: ., app-id: "${{ vars.HIROBA_RELEASE_APP_ID }}"}
     secrets:
       release-private-key: "${{ secrets.HIROBA_RELEASE_PRIVATE_KEY }}"
     permissions: {contents: write, pull-requests: write}
+  not-configured:
+    if: ${{ vars.HIROBA_RELEASE_APP_ID == '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "::notice::release-please is idle until HIROBA_RELEASE_APP_ID and HIROBA_RELEASE_PRIVATE_KEY are configured"
