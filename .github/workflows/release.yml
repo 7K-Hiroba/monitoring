@@ -101,6 +101,68 @@ jobs:
               return result.stdout.strip()
 
 
+          def package_files(package):
+              if not isinstance(package, dict):
+                  raise GateError("configured package is not an object")
+              changelog = package.get("changelog-path")
+              extras = package.get("extra-files", [])
+              if not isinstance(changelog, str) or not changelog:
+                  raise GateError("configured package is missing changelog-path")
+              if not isinstance(extras, list) or any(not isinstance(item, str) or not item for item in extras):
+                  raise GateError("configured extra-files must be a string list")
+              return changelog, extras
+
+
+          def component_file(root, component_path, relative):
+              if not isinstance(component_path, str) or not component_path:
+                  raise GateError("invalid component path")
+              combined = Path(component_path) / relative
+              if combined.is_absolute() or ".." in combined.parts:
+                  raise GateError("component metadata path escapes the repository")
+              try:
+                  text = (root / combined).read_text()
+              except OSError as error:
+                  raise GateError(f"missing component metadata {combined.as_posix()}") from error
+              return combined.as_posix(), text
+
+
+          def extra_version(text, path):
+              matches = re.findall(r"(?m)^version:[ \t]*[\"']?([^\"'\s#]+)", text)
+              if len(matches) != 1 or not SEMVER_RE.fullmatch(matches[0]):
+                  raise GateError(f"extra-file {path} must contain one valid top-level version")
+              return matches[0]
+
+
+          def semver_parts(version):
+              without_build = version.split("+", 1)[0]
+              core, separator, prerelease = without_build.partition("-")
+              return tuple(int(item) for item in core.split(".")), prerelease if separator else None
+
+
+          def semver_compare(left, right):
+              left_core, left_pre = semver_parts(left)
+              right_core, right_pre = semver_parts(right)
+              if left_core != right_core:
+                  return 1 if left_core > right_core else -1
+              if left_pre is None or right_pre is None:
+                  if left_pre == right_pre:
+                      return 0
+                  return 1 if left_pre is None else -1
+              for left_item, right_item in zip(left_pre.split("."), right_pre.split(".")):
+                  if left_item == right_item:
+                      continue
+                  left_numeric, right_numeric = left_item.isdigit(), right_item.isdigit()
+                  if left_numeric and right_numeric:
+                      return 1 if int(left_item) > int(right_item) else -1
+                  if left_numeric != right_numeric:
+                      return -1 if left_numeric else 1
+                  return 1 if left_item > right_item else -1
+              left_length, right_length = len(left_pre.split(".")), len(right_pre.split("."))
+              if left_length == right_length:
+                  return 0
+              return 1 if left_length > right_length else -1
+
+
           def evaluate():
               event = os.environ.get("GITHUB_EVENT_NAME", "")
               repair_tag = os.environ.get("REPAIR_TAG", "")
@@ -187,11 +249,14 @@ jobs:
               if not isinstance(changed_files, list):
                   raise GateError("merged PR files response is not a list")
               filenames = {item.get("filename") for item in changed_files if isinstance(item, dict)}
-              if not {".release-please-manifest.json", "CHANGELOG.md"}.issubset(filenames):
-                  raise GateError("release PR did not change both manifest and CHANGELOG")
+              if ".release-please-manifest.json" not in filenames:
+                  raise GateError("release PR did not change the manifest")
               if "release-please-config.json" in filenames:
                   raise GateError("release PR must not change its producer contract")
 
+              packages = config.get("packages")
+              if not isinstance(packages, dict) or not packages:
+                  raise GateError("producer config has no packages")
               base_sha = str(base.get("sha", "")).lower()
               if not SHA_RE.fullmatch(base_sha):
                   raise GateError("release PR has an invalid base SHA")
@@ -201,35 +266,53 @@ jobs:
               current_manifest = manifest(
                   (root / ".release-please-manifest.json").read_text(), sha
               )
-              # Monitoring has independently versioned components. A genuine
-              # aggregated Release PR must contain exactly one new/changed
-              # semver delta; unchanged entries remain valid and are not new
-              # release targets. Multiple deltas are ambiguous and fail closed.
+              if set(current_manifest) != set(packages):
+                  raise GateError("current manifest and configured package identities differ")
               changed = sorted(
                   path for path in set(base_manifest) | set(current_manifest)
                   if base_manifest.get(path) != current_manifest.get(path)
               )
-              if len(changed) != 1 or changed[0] not in current_manifest:
-                  raise GateError("release PR must contain exactly one new manifest version")
+              if len(changed) != 1 or changed[0] not in current_manifest or changed[0] not in base_manifest:
+                  raise GateError("release PR must contain exactly one changed component")
               component_path = changed[0]
+              old_version = base_manifest[component_path]
               version = current_manifest[component_path]
+              if semver_compare(version, old_version) <= 0:
+                  raise GateError("release component version must be a real semver increase")
 
-              try:
-                  changelog = (root / "CHANGELOG.md").read_text()
-              except OSError as error:
-                  raise GateError("CHANGELOG.md is missing at the merged SHA") from error
+              package = packages[component_path]
+              changelog_path, extras = package_files(package)
+              changelog_name = (Path(component_path) / changelog_path).as_posix()
+              extra_names = [(Path(component_path) / extra).as_posix() for extra in extras]
+              required_files = {".release-please-manifest.json", changelog_name, *extra_names}
+              if not required_files.issubset(filenames):
+                  missing = ", ".join(sorted(required_files - filenames))
+                  raise GateError(f"release PR is missing component metadata: {missing}")
+
+              # The releasing component's old extra-files prove the base from
+              # which it increased. All current extra-files, including unchanged
+              # components, must match their current manifest to reject drift.
+              for extra_name in extra_names:
+                  old_text = git(root, "show", f"{base_sha}:{extra_name}")
+                  if extra_version(old_text, f"{base_sha}:{extra_name}") != old_version:
+                      raise GateError("old component extra-file version does not match the old manifest")
+              for configured_path, configured_package in packages.items():
+                  _, configured_extras = package_files(configured_package)
+                  for extra in configured_extras:
+                      extra_name, text = component_file(root, configured_path, extra)
+                      if extra_version(text, extra_name) != current_manifest[configured_path]:
+                          raise GateError(f"current extra-file version drift at {extra_name}")
+
+              _, changelog = component_file(root, component_path, changelog_path)
               changelog_heading = rf"^## \[?v?{re.escape(version)}\]?(?:\s|\(|$)"
               if not re.search(changelog_heading, changelog, re.MULTILINE):
-                  raise GateError(f"CHANGELOG.md has no heading for {version}")
+                  raise GateError(f"{changelog_name} has no heading for {version}")
 
               # The ordinary target is v<version>. Signed R's finalizer uses
               # <releaseComponent>-v<version> for component releases; check both
               # when a component identity exists so neither tag can be reused.
               tags = {f"v{version}"}
-              packages = config.get("packages")
-              if not isinstance(packages, dict) or not isinstance(packages.get(component_path), dict):
-                  raise GateError("changed manifest path is absent from the producer config")
-              component = packages[component_path].get("component")
+              component = package.get("component")
               if config.get("include-component-in-tag") and not component:
                   raise GateError("component release is missing its release identity")
               if component:
@@ -240,7 +323,7 @@ jobs:
                   path = f"git/ref/tags/{urllib.parse.quote(tag, safe='')}"
                   if api(path, missing_ok=True) is not None:
                       raise GateError(f"target tag {tag} already exists")
-              print(f"::notice::merged producer PR #{number} and metadata validated for {version}")
+              print(f"::notice::merged producer PR #{number} validated {component_path} {version}")
               return True
 
 
