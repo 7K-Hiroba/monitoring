@@ -2,15 +2,32 @@ name: release-please
 on: {push: {branches: [main]}}
 permissions: {contents: read}
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs: {configured: "${{ steps.credentials.outputs.configured }}"}
+    steps:
+      - id: credentials
+        env:
+          RELEASE_APP_ID: ${{ vars.HIROBA_RELEASE_APP_ID }}
+          RELEASE_PRIVATE_KEY: ${{ secrets.HIROBA_RELEASE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$RELEASE_APP_ID" && -n "$RELEASE_PRIVATE_KEY" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
   propose:
-    if: ${{ vars.HIROBA_RELEASE_APP_ID != '' }}
+    needs: preflight
+    if: needs.preflight.outputs.configured == 'true'
     uses: 7K-Hiroba/workflows/.github/workflows/release-please.yml@f092eab6bb07de64a2d6f2e35ac4c65fca794f76 # v2.0.3
     with: {root: ., app-id: "${{ vars.HIROBA_RELEASE_APP_ID }}"}
     secrets:
       release-private-key: "${{ secrets.HIROBA_RELEASE_PRIVATE_KEY }}"
     permissions: {contents: write, pull-requests: write}
   not-configured:
-    if: ${{ vars.HIROBA_RELEASE_APP_ID == '' }}
+    needs: preflight
+    if: needs.preflight.outputs.configured != 'true'
     runs-on: ubuntu-latest
     steps:
       - run: echo "::notice::release-please is idle until HIROBA_RELEASE_APP_ID and HIROBA_RELEASE_PRIVATE_KEY are configured"
