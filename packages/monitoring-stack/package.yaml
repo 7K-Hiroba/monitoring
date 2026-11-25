@@ -1,6 +1,8 @@
-version: 1.3.0
+version: 1.4.0
 channel: incubating
 type: kro-rgd
 target: platform
-description: Full Kubernetes observability stack with Mimir, Alertmanager, Grafana, Loki, Alloy, and client collectors; no Prometheus server
+description: >-
+  Full Kubernetes observability stack with Mimir, Alertmanager, Grafana, Loki,
+  Alloy, and client collectors; no Prometheus server
 category: observability

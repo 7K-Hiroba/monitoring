@@ -1,9 +1,11 @@
 apiVersion: v2
 name: monitoring
-description: Full Kubernetes observability with Mimir, Alertmanager, Grafana, Loki, Alloy, and Kubernetes collectors; no Prometheus server
+description: >-
+  Full Kubernetes observability with Mimir, Alertmanager, Grafana, Loki, Alloy,
+  and Kubernetes collectors; no Prometheus server
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.1.1
+appVersion: 0.1.0
 dependencies:
   - name: mimir-distributed
     version: 6.2.2
