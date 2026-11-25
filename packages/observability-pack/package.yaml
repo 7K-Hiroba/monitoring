@@ -1,5 +1,7 @@
-version: 0.1.0
+version: 0.1.1
 channel: incubating
 type: kro-rgd
-description: Generated monitoring observability companion with Grafana dashboards and central/local Mimir-compatible rule assets
+description: >-
+  Generated monitoring observability companion with Grafana dashboards and
+  central/local Mimir-compatible rule assets
 category: observability
