@@ -23,7 +23,7 @@ jobs:
       - run: python -m pip install --requirement .hiroba/workflows/requirements-dev.txt
       - id: tools-key
         run: echo "key=$(.hiroba/workflows/scripts/install-ci-tools.sh --cache-key promtool alloy helm kubectl)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with: {path: .hiroba-cache, key: "monitoring-components-${{ steps.tools-key.outputs.key }}"}
       - run: .hiroba/workflows/scripts/install-ci-tools.sh promtool alloy helm kubectl
       - run: python .hiroba/workflows/scripts/prepare-chart.py --chart charts/monitoring
