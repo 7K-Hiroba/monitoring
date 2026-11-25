@@ -26,6 +26,6 @@ dependencies:
     repository: https://prometheus-community.github.io/helm-charts
     condition: components.kubeStateMetrics
   - name: prometheus-node-exporter
-    version: 5.2.0
+    version: 6.0.0
     repository: https://prometheus-community.github.io/helm-charts
     condition: components.nodeExporter
