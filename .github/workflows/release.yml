@@ -346,7 +346,7 @@ jobs:
   release:
     needs: gate
     if: needs.gate.outputs.should_release == 'true'
-    uses: 7K-Hiroba/workflows/.github/workflows/release.yml@f092eab6bb07de64a2d6f2e35ac4c65fca794f76 # v2.0.3
+    uses: 7K-Hiroba/workflows/.github/workflows/release.yml@c2432e1b186987ffdaa97f99b31b89b073c7a47e # v2.1.1
     with: {root: ., repair_tag: "${{ inputs.repair_tag }}", app-id: "${{ vars.HIROBA_RELEASE_APP_ID }}"}
     secrets:
       release-private-key: "${{ secrets.HIROBA_RELEASE_PRIVATE_KEY }}"
