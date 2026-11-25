@@ -34,7 +34,7 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
   repair:
     needs: resolve
-    uses: 7K-Hiroba/workflows/.github/workflows/release-chart.yml@f092eab6bb07de64a2d6f2e35ac4c65fca794f76 # v2.0.3
+    uses: 7K-Hiroba/workflows/.github/workflows/release-chart.yml@c2432e1b186987ffdaa97f99b31b89b073c7a47e # v2.1.1
     with:
       root: .
       chart: "${{ inputs.chart }}"

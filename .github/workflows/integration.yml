@@ -37,7 +37,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   integration:
-    uses: 7K-Hiroba/workflows/.github/workflows/test-stack.yml@f092eab6bb07de64a2d6f2e35ac4c65fca794f76 # v2.0.3
+    uses: 7K-Hiroba/workflows/.github/workflows/test-stack.yml@c2432e1b186987ffdaa97f99b31b89b073c7a47e # v2.1.1
     # The PR check remains associated with the head; the default checkout binds
     # evidence to the exact merge tree (or push SHA) being tested.
     with: {root: .}

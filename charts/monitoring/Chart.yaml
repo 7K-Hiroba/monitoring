@@ -10,7 +10,7 @@ dependencies:
     repository: https://grafana.github.io/helm-charts
     condition: components.mimir
   - name: grafana
-    version: 14.5.0
+    version: 14.6.0
     repository: https://grafana-community.github.io/helm-charts
     condition: components.grafana
   - name: loki
@@ -18,11 +18,11 @@ dependencies:
     repository: https://grafana.github.io/helm-charts
     condition: components.loki
   - name: alloy
-    version: 1.6.0
+    version: 1.16.0
     repository: https://grafana.github.io/helm-charts
     condition: components.alloy
   - name: kube-state-metrics
-    version: 9.0.1
+    version: 9.1.0
     repository: https://prometheus-community.github.io/helm-charts
     condition: components.kubeStateMetrics
   - name: prometheus-node-exporter
