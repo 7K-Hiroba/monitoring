@@ -10,7 +10,7 @@ dependencies:
     repository: https://grafana.github.io/helm-charts
     condition: components.mimir
   - name: grafana
-    version: 14.6.0
+    version: 14.6.1
     repository: https://grafana-community.github.io/helm-charts
     condition: components.grafana
   - name: loki
